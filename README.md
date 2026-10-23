@@ -26,8 +26,8 @@ The config values are meant to be public. Security comes from the rules, not fro
 
 ## How to play
 
-1. Open the site → **Host a game** → pick a quiz.
-2. Players open the same site (or scan the QR code), then enter the PIN and a nickname.
+1. Open the admin page, `admin.html` (for example `https://<username>.github.io/<repo>/admin.html`) → **Host a game** → pick a quiz. Create and edit quizzes there too.
+2. Players open the main site (or scan the QR code), then enter the PIN and a nickname. The main page only lets people join games.
 3. **Start game.** Correct answers score up to 1000 points (faster earns more), plus up to 500 bonus points for an answer streak. A question closes when everyone online has answered, or when time runs out (plus a 1.5-second grace period for answers already on their way).
 
 ## Free plan limits
