@@ -47,8 +47,11 @@
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2600);
   }
+  // admin.html hosts games and edits quizzes; the main page is for players only
+  const ADMIN = document.body.dataset.mode === "admin";
+  const playerPath = location.pathname.replace(/admin(\.html)?$/, "");
   function joinUrl(pin) {
-    return location.origin + location.pathname + "?pin=" + pin;
+    return location.origin + playerPath + "?pin=" + pin;
   }
 
   function getQuizzes() {
@@ -78,37 +81,40 @@
       <section class="stack home">
         <div class="stack center">
           <div class="brand"><h1>PinQuiz</h1><span class="dot"></span></div>
-          <p class="muted">Live quiz games for a room full of phones. Free, no accounts.</p>
+          <p class="muted">${ADMIN ? "Admin: host games and manage your quizzes." : "Live quiz games for a room full of phones. Free, no accounts."}</p>
         </div>
         <div class="row center" id="resume"></div>
-        <div class="choices narrow" style="max-width:720px">
-          <form class="card stack" id="joinForm">
+        <div class="narrow">
+${ADMIN ? `          <div class="card stack">
+            <h2>Host a game</h2>
+            <button id="hostBtn">Host a game</button>
+            <button class="ghost" id="editBtn">Create and edit quizzes</button>
+          </div>` : `          <form class="card stack" id="joinForm">
             <h2>Join a game</h2>
             <label class="label" for="pinIn">Game PIN</label>
             <input id="pinIn" class="pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="000000" required>
             <label class="label" for="nickIn">Nickname</label>
             <input id="nickIn" maxlength="16" autocomplete="nickname" placeholder="Your name" pattern="[A-Za-z0-9 _\\-]{1,16}" title="Letters, numbers, spaces, - and _" required>
             <button type="submit">Join</button>
-          </form>
-          <div class="card stack">
-            <h2>Host a game</h2>
-            <p class="muted">Pick a quiz, put this screen where everyone can see it, and share the PIN.</p>
-            <div class="spacer"></div>
-            <button id="hostBtn">Host a game</button>
-            <button class="ghost" id="editBtn">Create and edit quizzes</button>
-          </div>
+          </form>`}
         </div>
       </section>`;
+    if (ADMIN) {
+      const hosting = load(STORE_HOSTING, null);
+      if (hosting && hosting.pin) {
+        $("#resume").innerHTML = `<button class="ghost small" id="resumeHost">Resume hosting game ${esc(hosting.pin)}</button>`;
+        $("#resumeHost").onclick = () => go(() => hostScreen(null, hosting.pin));
+      }
+      $("#hostBtn").addEventListener("click", () => go(pickQuiz));
+      $("#editBtn").addEventListener("click", () => go(quizList));
+      return;
+    }
     const params = new URLSearchParams(location.search);
     const me = load(STORE_PLAYER, {});
     if (params.get("pin")) $("#pinIn").value = params.get("pin").replace(/\D/g, "").slice(0, 6);
     if (me.nick) $("#nickIn").value = me.nick;
     ($("#pinIn").value ? $("#nickIn") : $("#pinIn")).focus();
-    const hosting = load(STORE_HOSTING, null);
-    if (hosting && hosting.pin) {
-      $("#resume").innerHTML = `<button class="ghost small" id="resumeHost">Resume hosting game ${esc(hosting.pin)}</button>`;
-      $("#resumeHost").onclick = () => go(() => hostScreen(null, hosting.pin));
-    } else if (me.pin && me.nick && !params.get("pin")) {
+    if (me.pin && me.nick && !params.get("pin")) {
       $("#resume").innerHTML = `<button class="ghost small" id="rejoin">Rejoin game ${esc(me.pin)} as ${esc(me.nick)}</button>`;
       $("#rejoin").onclick = () => go(() => playerScreen(me.pin, me.nick));
     }
@@ -120,8 +126,6 @@
       if (!/^[A-Za-z0-9 _-]{1,16}$/.test(nick)) return toast("Nicknames use letters, numbers, spaces, - and _ (up to 16).");
       go(() => playerScreen(pin, nick));
     });
-    $("#hostBtn").addEventListener("click", () => go(pickQuiz));
-    $("#editBtn").addEventListener("click", () => go(quizList));
   }
 
   // ---------- quiz library + editor ----------
@@ -434,7 +438,7 @@
           <section class="stack" style="flex:1">
             <div class="row"><button class="ghost small" id="quit">End game</button><div class="spacer"></div><span class="label">${esc(quiz.title)}</span></div>
             <div class="pinbar">
-              <div class="stack" style="gap:4px"><span class="label">Join at</span><span class="joinurl">${esc(location.host + location.pathname)}</span></div>
+              <div class="stack" style="gap:4px"><span class="label">Join at</span><span class="joinurl">${esc(location.host + playerPath)}</span></div>
               <div class="stack" style="gap:4px"><span class="label">Game PIN</span><span class="pinval">${pin.slice(0, 3)} ${pin.slice(3)}</span></div>
               <div class="qr" id="qr" title="${esc(url)}"></div>
             </div>
