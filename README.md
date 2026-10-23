@@ -25,7 +25,7 @@ The config values are meant to be public. Security comes from the rules, not fro
 **Or Firebase Hosting, all in the browser:** this repo has a GitHub Action (`.github/workflows/deploy.yml`) that publishes the site to `https://ces--kahoot.web.app` every time `main` changes. It needs a key, set up once:
 
 1. Open [console.cloud.google.com/iam-admin/serviceaccounts](https://console.cloud.google.com/iam-admin/serviceaccounts) and pick the `ces--kahoot` project.
-2. **Create service account** → any name (e.g. `github-deploy`) → **Create and continue** → role **Firebase Hosting Admin** → **Done**.
+2. **Create service account** → any name (e.g. `github-deploy`) → **Create and continue** → add two roles, **Firebase Hosting Admin** and **Service Usage Consumer** (use **Add another role** for the second) → **Done**.
 3. Click the new account → **Keys → Add key → Create new key → JSON**. A `.json` file downloads. Open it and copy all of its text.
 4. On GitHub: repo **Settings → Secrets and variables → Actions → New repository secret**. Name: `FIREBASE_SERVICE_ACCOUNT`, value: the text you copied → **Add secret**.
 5. Repo **Actions** tab → **Deploy to Firebase Hosting** → **Run workflow**. After that it runs by itself whenever `main` changes.
