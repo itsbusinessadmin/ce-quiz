@@ -58,7 +58,6 @@
   function editableCover(c) {
     c = c || {};
     return {
-      text: typeof c.text === "string" ? c.text.slice(0, 120) : "",
       media: validMedia(c.media) && c.media.kind === "image" ? { id: c.media.id, kind: "image", name: String(c.media.name || "").slice(0, 80) } : null,
     };
   }
@@ -492,10 +491,8 @@ ${ADMIN ? `          <div class="card stack">
       $("#canvas").innerHTML = `
         <p class="label center" style="display:block">Cover · shown on the big screen while players join</p>
         <textarea id="ctitle" class="ed-q" rows="1" maxlength="80" placeholder="Quiz title" aria-label="Quiz title">${esc(quiz.title)}</textarea>
-        ${mediaBox(c)}
-        <input id="ctext" class="cover-text" maxlength="120" placeholder="Add a short line, like “Guess the brand logo!”" aria-label="Cover text" value="${esc(c.text)}">`;
+        ${mediaBox(c)}`;
       fitText($("#ctitle"), (v) => { quiz.title = v; $("#title").value = v; });
-      $("#ctext").oninput = (e) => { c.text = e.target.value; touch(); };
       wireMedia(c);
     }
 
@@ -542,7 +539,6 @@ ${ADMIN ? `          <div class="card stack">
           <ul class="tips muted">
             <li>The quiz title is the heading.</li>
             <li>Add a picture or GIF, like a logo or a theme image.</li>
-            <li>Add a short line to set the mood or explain the game.</li>
           </ul>
           <button class="ghost small" id="toFirst">Edit question 1 →</button>`;
         $("#toFirst").onclick = () => select(0);
@@ -638,7 +634,7 @@ ${ADMIN ? `          <div class="card stack">
         select(bad);
         return toast(`Question ${bad + 1}: ${problem(quiz.questions[bad])}`);
       }
-      const cover = { text: quiz.cover.text.trim() };
+      const cover = {};
       if (quiz.cover.media) cover.media = quiz.cover.media;
       const out = { id: quiz.id, title, cover, questions: quiz.questions.map((x) => {
         // Keep slot order (colours stay put) but drop empty slots.
@@ -768,10 +764,10 @@ ${ADMIN ? `          <div class="card stack">
         const [g, s] = await Promise.all([db.ref("games/" + pin).get(), db.ref("secrets/" + pin).get()]);
         if (!g.exists() || g.val().hostUid !== uid || !s.exists()) { save(STORE_HOSTING, null); return errorScreen("That game has ended", "Start a new one from the home screen."); }
         const media = s.val().media || [];
-        quiz = { title: g.val().quiz.title, cover: { text: (g.val().quiz.cover || {}).text || "", media: s.val().coverMedia || null }, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] },
+        quiz = { title: g.val().quiz.title, cover: { media: s.val().coverMedia || null }, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] },
           typeof media[i] === "string" ? { image: media[i] } : { media: media[i] || null })) };
       } else {
-        const pub = { title: quiz.title, cover: { text: (quiz.cover && quiz.cover.text) || "" }, questions: quiz.questions.map((q) => ({ text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
+        const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
         for (let tries = 0; ; tries++) {
           pin = String(Math.floor(100000 + Math.random() * 900000));
           try {
@@ -877,7 +873,7 @@ ${ADMIN ? `          <div class="card stack">
       const s = st(), list = rankOf(game.players, game.scores);
       clearInterval(tick);
       if (s.phase === "lobby") {
-        const url = joinUrl(pin), text = (quiz.cover && quiz.cover.text) || "";
+        const url = joinUrl(pin);
         // Draw the lobby once; joins only refresh the participants list, so a GIF keeps playing.
         if (drawn !== "lobby") {
           drawn = "lobby";
@@ -898,7 +894,6 @@ ${ADMIN ? `          <div class="card stack">
                 <div class="lob-main">
                   <div class="lob-title">${esc(quiz.title)}</div>
                   ${coverSrc ? `<div class="lob-media">${mediaTag(coverSrc)}</div>` : ""}
-                  ${text ? `<div class="lob-text">${esc(text)}</div>` : ""}
                 </div>
                 <aside class="lob-card lob-people">
                   <div class="row" style="gap:10px"><h3>Participants</h3><span class="count" id="pcount">0</span></div>
@@ -1074,7 +1069,7 @@ ${ADMIN ? `          <div class="card stack">
       const you = order[rank - 1];
       const mine = game.scores[uid] || {};
       if (s.phase === "lobby") {
-        app.innerHTML = `<section class="stack center home"><span class="label">You're in</span><h1>${esc(nick)}</h1><p class="muted">${esc(game.quiz.title)}</p>${game.quiz.cover && game.quiz.cover.text ? `<p>${esc(game.quiz.cover.text)}</p>` : ""}
+        app.innerHTML = `<section class="stack center home"><span class="label">You're in</span><h1>${esc(nick)}</h1><p class="muted">${esc(game.quiz.title)}</p>
           <p>${order.length} ${order.length === 1 ? "player" : "players"} here. The game starts soon.</p>
           <div class="players">${order.map((p) => `<span class="chip" style="${p.uid === uid ? "background:var(--spot);color:var(--ink)" : ""}">${esc(p.nick)}</span>`).join("")}</div></section>`;
       } else if (s.phase === "question") {
