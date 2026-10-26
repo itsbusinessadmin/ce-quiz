@@ -7,6 +7,7 @@
   const STORE_QUIZZES = "pinquiz.quizzes";
   const STORE_PLAYER = "pinquiz.player";
   const STORE_HOSTING = "pinquiz.hosting";
+  const STORE_MUTED = "pinquiz.muted";
   const MAX_POINTS = 1000;
 
   const SHAPES = [
@@ -1029,11 +1030,36 @@ ${ADMIN ? `          <div class="card stack">
     const fsKey = (e) => { if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) fsToggle(); };
     fsBtn.onclick = fsToggle;
     fsLabel();
+    // Background music on the host's screen. It plays everywhere except while a
+    // question is showing. If the browser blocks it, the button asks for a click.
+    const bgMusic = new Audio("music/background.mp3");
+    bgMusic.loop = true;
+    bgMusic.volume = 0.6;
+    let muted = !!load(STORE_MUTED, false), blocked = false, musicWanted = false;
+    const sndBtn = document.createElement("button");
+    sndBtn.className = "ghost small";
+    const sndLabel = () => {
+      sndBtn.textContent = blocked && !muted ? "Click for sound" : muted ? "Sound off" : "Sound on";
+      sndBtn.classList.toggle("attn", blocked && !muted);
+    };
+    const music = (on) => {
+      musicWanted = on;
+      if (!on || muted) return bgMusic.pause();
+      if (bgMusic.paused) bgMusic.play().then(() => { blocked = false; sndLabel(); }, () => { blocked = true; sndLabel(); });
+    };
+    sndBtn.onclick = () => {
+      if (!blocked) { muted = !muted; save(STORE_MUTED, muted); }
+      music(musicWanted);
+      sndLabel();
+    };
+    sndLabel();
     document.addEventListener("fullscreenchange", fsLabel);
     document.addEventListener("keydown", fsKey);
     app.classList.add("stage");
     cleanup = () => {
       dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls();
+      bgMusic.pause();
+      bgMusic.removeAttribute("src");
       app.classList.remove("stage");
       document.removeEventListener("fullscreenchange", fsLabel);
       document.removeEventListener("keydown", fsKey);
@@ -1156,6 +1182,7 @@ ${ADMIN ? `          <div class="card stack">
       if (dead) return;
       const s = st(), list = rankOf(game.players, game.scores);
       clearInterval(tick);
+      music(s.phase !== "question");
       if (s.phase === "lobby") {
         const url = joinUrl(pin);
         // Draw the lobby once; joins only refresh the participants list, so a GIF keeps playing.
@@ -1194,7 +1221,7 @@ ${ADMIN ? `          <div class="card stack">
           $("#start").onclick = () => startQuestion(0);
           $("#copy").onclick = () => navigator.clipboard.writeText(url).then(() => toast("Join link copied"), () => toast(url));
           $("#quit").onclick = endGame;
-          $(".sbar").appendChild(fsBtn);
+          $(".sbar").append(sndBtn, fsBtn);
         }
         const key = list.map((p) => p.uid + (game.presence[p.uid] ? 1 : 0)).join();
         if (key === peopleKey) return;
@@ -1282,7 +1309,7 @@ ${ADMIN ? `          <div class="card stack">
         $("#again").onclick = () => go(() => hostScreen(quiz));
         $("#home").onclick = () => go(home);
       }
-      if ($(".sbar")) $(".sbar").appendChild(fsBtn);
+      if ($(".sbar")) $(".sbar").append(sndBtn, fsBtn);
     }
     render();
   }
