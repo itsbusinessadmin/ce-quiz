@@ -846,10 +846,11 @@ ${ADMIN ? `          <div class="card stack">
       await gref.update(upd);
     }
 
+    // The scoreboard only comes after the last question, just before the winners.
     function next() {
-      const s = st();
-      if (s.phase === "reveal") return gref.child("state/phase").set("board");
-      if (s.q + 1 < quiz.questions.length) startQuestion(s.q + 1);
+      const s = st(), last = s.q + 1 >= quiz.questions.length;
+      if (s.phase === "reveal" && last) return gref.child("state/phase").set("board");
+      if (!last) startQuestion(s.q + 1);
       else gref.child("state").set(Object.assign({}, s, { phase: "end" }));
     }
 
@@ -955,7 +956,7 @@ ${ADMIN ? `          <div class="card stack">
         const max = Math.max(1, ...counts), right = corrects(s);
         app.innerHTML = `
           <section class="stack" style="flex:1">
-            <div class="row"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span><div class="spacer"></div><button id="next">Next</button></div>
+            <div class="row"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span><div class="spacer"></div><button id="next">${s.q + 1 >= quiz.questions.length ? "Show scoreboard" : "Next question"}</button></div>
             <div class="qtext">${esc(qq.text)}</div>
             <div class="bars" style="grid-template-columns:repeat(${qq.options.length},1fr)">${counts.map((n, i) => `
               <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${right.includes(i) ? 1 : .35}"></div></div>`).join("")}</div>
