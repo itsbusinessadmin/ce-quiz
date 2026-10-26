@@ -7,5 +7,5 @@ window.PINQUIZ_FIREBASE = {
   projectId: "ces--kahoot",
   storageBucket: "ces--kahoot.firebasestorage.app",
   messagingSenderId: "1000218640629",
-  appId: "1:1000218640629:web:e9e01cd78e482a4fd505bc",
+  appId: "1:1000218640629:web:bff002444bf0fdbed505bc",
 };

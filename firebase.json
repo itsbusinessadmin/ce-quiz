@@ -3,6 +3,7 @@
     "rules": "database.rules.json"
   },
   "hosting": {
+    "site": "cequiz",
     "public": ".",
     "ignore": ["firebase.json", "database.rules.json", "README.md", "**/.*"]
   },
