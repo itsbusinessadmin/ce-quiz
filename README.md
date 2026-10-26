@@ -48,16 +48,6 @@ On the admin page, **Settings** changes the game's name, adds a logo, and picks 
 - After updating to this version, paste the new `database.rules.json` into the Realtime Database **Rules** tab and click **Publish**, or settings won't save.
 - Settings can only be changed from the browser that saved them first. To hand them to another browser, delete the `settings` entry in the Realtime Database **Data** tab, then save from the new browser.
 
-## Game sounds
-
-In **Settings → Game sounds**, upload three sound files (MP3, M4A, WAV or OGG, up to 50 MB each):
-
-- **Background music** loops in the lobby, between questions and on the scoreboard and winners screens. It pauses while a question is showing.
-- **Question music** plays from the start while each question is showing. It stays quiet for a question that has its own video or audio.
-- **Answer reveal sound** plays once when the answers are revealed, then the background music carries on.
-
-Sounds play only on the host's screen and are saved in the browser you uploaded them from, so host from that browser. The host screen has a **Sound on / Sound off** button. In a Zoom, Google Meet or Teams call, turn on sharing your computer's sound when you share your screen. YouTube links can't be used; download or buy the audio file instead.
-
 ## Free plan limits
 
 - **100 devices connected at the same time**, across all games together.
