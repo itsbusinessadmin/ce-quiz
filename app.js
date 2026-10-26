@@ -347,15 +347,25 @@ ${ADMIN ? `          <div class="card stack">
     quiz.questions = quiz.questions.map(editable);
     quiz.cover = editableCover(quiz.cover);
     // cur is the question being edited; -1 is the cover page.
-    let cur = -1, dirty = false, adding = false, dragFrom = null, showProblems = false;
+    let cur = -1, dirty = false, adding = false, dragFrom = null, showProblems = false, pasteFile = null;
     const q = () => quiz.questions[cur];
     const touch = () => { dirty = true; };
     const warn = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } };
     const keys = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveQuiz(); } };
     window.addEventListener("beforeunload", warn);
     document.addEventListener("keydown", keys);
+    // Pasting a copied picture, GIF or file anywhere in the editor puts it on the
+    // page being edited; pasted text still goes into whatever box has focus.
+    const paste = (e) => {
+      const item = [...((e.clipboardData && e.clipboardData.items) || [])].find((i) => i.kind === "file");
+      const f = item && item.getAsFile();
+      if (!f || !pasteFile) return;
+      e.preventDefault();
+      pasteFile(f);
+    };
+    document.addEventListener("paste", paste);
     app.classList.add("wide");
-    cleanup = () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("keydown", keys); app.classList.remove("wide"); dropMediaUrls(); };
+    cleanup = () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("keydown", keys); document.removeEventListener("paste", paste); app.classList.remove("wide"); dropMediaUrls(); };
 
     app.innerHTML = `
       <section class="ed">
@@ -436,7 +446,7 @@ ${ADMIN ? `          <div class="card stack">
         <div class="media${shown ? " has " + shown.kind : ""}" id="media">${shown ? `
           ${shown.url === undefined ? '<span class="muted">Loading…</span>' : shown.url === null ? '<span class="muted">This file is missing from this browser. Replace it or remove it.</span>' : mediaTag(shown)}
           <div class="media-actions"><button class="small ghost" id="imgChange">Replace</button><button class="small danger" id="imgDel">Remove</button></div>` : `
-          <button class="drop" id="imgAdd"><span class="plus" aria-hidden="true">+</span><b>${pictureOnly ? "Add a cover picture" : "Add media"}</b><span class="muted">Click to upload, or drop a file here</span><span class="muted formats">${pictureOnly ? "Picture or GIF" : "Picture, GIF, MP3 or MP4"} · up to ${MAX_MEDIA_MB} MB</span></button>`}
+          <button class="drop" id="imgAdd"><span class="plus" aria-hidden="true">+</span><b>${pictureOnly ? "Add a cover picture" : "Add media"}</b><span class="muted">Click to upload, drop a file here, or paste it (Ctrl+V / ⌘V)</span><span class="muted formats">${pictureOnly ? "Picture or GIF" : "Picture, GIF, MP3 or MP4"} · up to ${MAX_MEDIA_MB} MB</span></button>`}
           <input type="file" id="imgFile" accept="${pictureOnly ? "image/*,.gif" : "image/*,video/*,audio/*,.mp3,.mp4,.gif"}" hidden>
         </div>`;
     }
@@ -465,6 +475,7 @@ ${ADMIN ? `          <div class="card stack">
       ["#imgAdd", "#imgChange"].forEach((id) => { if ($(id)) $(id).onclick = () => file.click(); });
       if ($("#imgDel")) $("#imgDel").onclick = () => { holder.image = ""; holder.media = null; touch(); drawCanvas(); if (pictureOnly) drawSlides(); };
       file.onchange = () => useFile(file.files[0]);
+      pasteFile = useFile;
       media.ondragover = (e) => { if (dragFrom !== null) return; e.preventDefault(); media.classList.add("drag"); };
       media.ondragleave = () => media.classList.remove("drag");
       media.ondrop = (e) => { e.preventDefault(); media.classList.remove("drag"); useFile(e.dataTransfer.files[0]); };
