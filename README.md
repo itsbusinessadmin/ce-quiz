@@ -37,6 +37,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 ## How to play
 
 1. Open the admin page, `admin.html` (for example `https://<username>.github.io/<repo>/admin.html`) → **Host a game** → pick a quiz. Create and edit quizzes there too.
+   Presenting in a Zoom, Google Meet or Teams call? Share the host window. Every host screen fits a 16:9 window without scrolling, the **Full screen** button (or the F key) hides the browser bars, and **Copy join link** gives you the link to paste in the meeting chat.
 2. Players open the main site (or scan the QR code), then enter the PIN and a nickname. The main page only lets people join games.
 3. **Start game.** Correct answers score up to 1000 points (faster earns more), plus up to 500 bonus points for an answer streak. Double-points questions score twice as much, and no-points questions don't count. A question closes when everyone online has answered, or when time runs out (plus a 1.5-second grace period for answers already on their way).
 
@@ -60,7 +61,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 ```
 
 - `cover` (optional): what the big screen shows while players join, next to the game PIN and QR code: the title and a picture or GIF as `media` (same format as below).
-- `type`: `"quiz"` (2 to 4 answers) or `"tf"` (true or false).
+- `type`: `"quiz"` (2 to 4 answers), `"tf"` (true or false), or `"slide"` (a cover slide between questions: `text` is its title, plus optional `media`; no answers or points).
 - `correct`: the index of the right answer. For a multi-select question (`"multi": true`), a list of indexes. Players score only if they pick exactly those.
 - `time`: 5, 10, 15, 20, 30, 45, 60, 90, 120, 180 or 240 seconds.
 - `points`: `1` standard, `2` double points, `0` no points.
