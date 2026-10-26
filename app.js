@@ -16,18 +16,6 @@
     '<svg class="shape" viewBox="0 0 40 40" aria-hidden="true"><rect x="4" y="4" width="32" height="32" rx="4"/></svg>',
   ];
 
-  const SAMPLE_QUIZ = {
-    id: "sample-space",
-    title: "Space Quick-Fire (example)",
-    questions: [
-      { text: "Which planet is closest to the Sun?", options: ["Venus", "Mercury", "Mars", "Earth"], correct: 1, time: 20 },
-      { text: "How long does sunlight take to reach Earth?", options: ["About 8 seconds", "About 8 minutes", "About 8 hours", "About 1 day"], correct: 1, time: 20 },
-      { text: "Which planet has the most known moons?", options: ["Jupiter", "Saturn", "Uranus", "Neptune"], correct: 1, time: 20 },
-      { text: "The Moon has no atmosphere to speak of.", options: ["True", "False"], correct: 0, time: 10 },
-      { text: "What is the largest planet in our solar system?", options: ["Saturn", "Neptune", "Jupiter", "Earth"], correct: 2, time: 20 },
-    ],
-  };
-
   // ---------- small helpers ----------
   const app = document.getElementById("app");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -55,9 +43,9 @@
   }
 
   function getQuizzes() {
-    const list = load(STORE_QUIZZES, null);
-    if (Array.isArray(list) && list.length) return list;
-    return [SAMPLE_QUIZ];
+    const list = load(STORE_QUIZZES, []);
+    // drop the old built-in example that earlier versions saved to the browser
+    return Array.isArray(list) ? list.filter((q) => q && q.id !== "sample-space") : [];
   }
   function setQuizzes(list) { save(STORE_QUIZZES, list); }
 
@@ -138,6 +126,7 @@ ${ADMIN ? `          <div class="card stack">
           <button class="small" id="new">New quiz</button></div>
         <h2>Your quizzes</h2>
         <p class="muted">Quizzes are saved in this browser. Export them to keep a copy or move them to another device.</p>
+        ${list.length ? "" : `<p class="muted">No quizzes yet. Create one or import a JSON file.</p>`}
         <div class="quizlist">${list.map((q, i) => `
           <div class="card item">
             <div class="grow" style="min-width:0"><h3>${esc(q.title)}</h3><p class="muted">${q.questions.length} questions</p></div>
@@ -162,8 +151,7 @@ ${ADMIN ? `          <div class="card stack">
       const i = +b.dataset.del;
       if (!armed.has(i)) { armed.add(i); b.textContent = "Tap again to delete"; return; }
       const next = list.filter((_, j) => j !== i);
-      setQuizzes(next.length ? next : []);
-      if (!next.length) save(STORE_QUIZZES, [SAMPLE_QUIZ]);
+      setQuizzes(next);
       go(quizList);
     });
     $("#imp").onchange = async (e) => {
@@ -248,6 +236,7 @@ ${ADMIN ? `          <div class="card stack">
       <section class="stack narrow" style="max-width:760px">
         <div class="row"><button class="ghost small" id="back">← Back</button></div>
         <h2>Pick a quiz to host</h2>
+        ${list.length ? "" : `<p class="muted">No quizzes yet. Create one first.</p>`}
         <div class="quizlist">${list.map((q, i) => `
           <div class="card item">
             <div class="grow" style="min-width:0"><h3>${esc(q.title)}</h3><p class="muted">${q.questions.length} questions</p></div>
