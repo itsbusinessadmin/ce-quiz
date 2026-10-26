@@ -39,7 +39,7 @@
   const validImage = (s) => typeof s === "string" && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(s);
 
   function newQuestion(type) {
-    return { type, text: "", options: type === "tf" ? ["True", "False"] : ["", "", "", ""], correct: [0], time: 20, points: 1, multi: false, image: "" };
+    return { type, text: "", options: type === "tf" ? ["True", "False"] : ["", "", "", ""], correct: [0], time: 20, points: 1, multi: false, image: "", media: null };
   }
   function editable(q) {
     const type = q.type === "tf" ? "tf" : "quiz";
@@ -51,6 +51,7 @@
       points: [0, 1, 2].includes(q.points) ? q.points : 1,
       multi: type === "quiz" && !!q.multi,
       image: validImage(q.image) ? q.image : "",
+      media: validMedia(q.media) ? { id: q.media.id, kind: q.media.kind, name: String(q.media.name || "").slice(0, 80) } : null,
     };
   }
   function problem(x) {
@@ -59,7 +60,81 @@
     if (!x.correct.some((c) => (x.options[c] || "").trim())) return "Mark a correct answer.";
     return "";
   }
-  // Shrinks a picked image so quizzes stay small enough for browser storage.
+  // Pictures, GIFs, video and audio live in IndexedDB (localStorage is far too
+  // small for them); a question keeps only { id, kind, name }. Quizzes saved
+  // before this kept a picture inline as a data URL in `image`.
+  const MEDIA_KINDS = ["image", "video", "audio"];
+  const MAX_MEDIA_MB = 50;
+  const validMedia = (m) => !!m && typeof m.id === "string" && MEDIA_KINDS.includes(m.kind);
+  function mediaKind(file) {
+    const kind = (file.type || "").split("/")[0];
+    if (MEDIA_KINDS.includes(kind)) return kind;
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    return { mp3: "audio", m4a: "audio", wav: "audio", ogg: "audio", mp4: "video", webm: "video", mov: "video", gif: "image" }[ext] || "";
+  }
+  const mediaDb = (() => {
+    let opened = null;
+    const open = () => opened || (opened = new Promise((resolve, reject) => {
+      const r = indexedDB.open("pinquiz", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("media");
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => { opened = null; reject(r.error); };
+    }));
+    const run = (mode, fn) => open().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction("media", mode), req = fn(tx.objectStore("media"));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    }));
+    return {
+      get: (id) => run("readonly", (st) => st.get(id)),
+      put: (id, blob) => run("readwrite", (st) => st.put(blob, id)),
+      del: (id) => run("readwrite", (st) => st.delete(id)),
+      keys: () => run("readonly", (st) => st.getAllKeys()),
+    };
+  })();
+  // Object URLs for stored media, made once per screen and revoked on leaving it.
+  const mediaUrls = new Map();
+  function loadMedia(id) {
+    let e = mediaUrls.get(id);
+    if (!e) {
+      e = { url: undefined };
+      e.ready = mediaDb.get(id).catch(() => null).then((blob) => (e.url = blob ? URL.createObjectURL(blob) : null));
+      mediaUrls.set(id, e);
+    }
+    return e;
+  }
+  function dropMediaUrls() {
+    mediaUrls.forEach((e) => { if (e.url) URL.revokeObjectURL(e.url); });
+    mediaUrls.clear();
+  }
+  // Where a question's media plays from, or null: { kind, url, name }.
+  async function mediaSource(q) {
+    if (validMedia(q.media)) {
+      const url = await loadMedia(q.media.id).ready;
+      return url ? { kind: q.media.kind, url, name: q.media.name || "" } : null;
+    }
+    return validImage(q.image) ? { kind: "image", url: q.image, name: "" } : null;
+  }
+  function mediaTag(m, extra) {
+    if (m.kind === "video") return `<video src="${esc(m.url)}" controls playsinline ${extra || 'preload="metadata"'}></video>`;
+    if (m.kind === "audio") return `<div class="audio"><span class="note" aria-hidden="true">♪</span><b>${esc(m.name || "Audio")}</b><audio src="${esc(m.url)}" controls ${extra || 'preload="metadata"'}></audio></div>`;
+    return `<img src="${esc(m.url)}" alt="">`;
+  }
+  // Deletes stored files no saved quiz uses any more.
+  async function pruneMedia() {
+    try {
+      const used = new Set(getQuizzes().flatMap((q) => q.questions.map((x) => x.media && x.media.id)));
+      await Promise.all((await mediaDb.keys()).filter((k) => !used.has(k)).map(mediaDb.del));
+    } catch { /* nothing to tidy, or storage blocked */ }
+  }
+  const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+
+  // Shrinks a picked picture so stored quizzes stay small.
   function shrinkImage(file) {
     return new Promise((resolve, reject) => {
       if (!/^image\//.test(file.type)) return reject(new Error("not an image"));
@@ -74,7 +149,7 @@
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, c.width, c.height);
         ctx.drawImage(img, 0, 0, c.width, c.height);
-        resolve(c.toDataURL("image/jpeg", 0.75));
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error("unreadable image"))), "image/jpeg", 0.75);
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("unreadable image")); };
       img.src = url;
@@ -204,8 +279,15 @@ ${ADMIN ? `          <div class="card stack">
     $("#back").onclick = () => go(home);
     $("#new").onclick = () => go(() => editor({ id: uid(), title: "", questions: [newQuestion("quiz")] }));
     app.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => go(() => editor(JSON.parse(JSON.stringify(list[+b.dataset.edit])))));
-    app.querySelectorAll("[data-exp]").forEach((b) => b.onclick = () => {
-      const q = list[+b.dataset.exp];
+    app.querySelectorAll("[data-exp]").forEach((b) => b.onclick = async () => {
+      // Stored media goes into the file as data URLs so the export stands alone.
+      const q = JSON.parse(JSON.stringify(list[+b.dataset.exp]));
+      for (const x of q.questions) {
+        if (!x.media) continue;
+        const blob = await mediaDb.get(x.media.id).catch(() => null);
+        if (blob) x.media = { kind: x.media.kind, name: x.media.name, data: await blobToDataUrl(blob) };
+        else delete x.media;
+      }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([JSON.stringify(q, null, 2)], { type: "application/json" }));
       a.download = (q.title || "quiz").replace(/[^\w-]+/g, "_") + ".json";
@@ -218,6 +300,7 @@ ${ADMIN ? `          <div class="card stack">
       if (!armed.has(i)) { armed.add(i); b.textContent = "Tap again to delete"; return; }
       const next = list.filter((_, j) => j !== i);
       setQuizzes(next);
+      pruneMedia();
       go(quizList);
     });
     $("#imp").onchange = async (e) => {
@@ -227,9 +310,16 @@ ${ADMIN ? `          <div class="card stack">
         const q = JSON.parse(await f.text());
         if (!validQuiz(q)) throw new Error();
         q.id = uid();
+        for (const x of q.questions) {
+          const m = x.media, kind = m && typeof m.data === "string" && (m.data.match(/^data:(image|video|audio)\/[\w.+-]+;base64,/) || [])[1];
+          if (!kind) { delete x.media; continue; }
+          const id = uid();
+          await mediaDb.put(id, await (await fetch(m.data)).blob());
+          x.media = { id, kind, name: m.name };
+        }
         q.questions = q.questions.map((x) => {
           const y = editable(x);
-          return Object.assign(y, { options: x.options.slice(), correct: y.multi ? y.correct : y.correct[0], image: y.image || undefined });
+          return Object.assign(y, { options: x.options.slice(), correct: y.multi ? y.correct : y.correct[0], image: y.image || undefined, media: y.media || undefined });
         });
         setQuizzes([...getQuizzes(), q]);
         toast("Imported " + q.title);
@@ -251,7 +341,7 @@ ${ADMIN ? `          <div class="card stack">
     window.addEventListener("beforeunload", warn);
     document.addEventListener("keydown", keys);
     app.classList.add("wide");
-    cleanup = () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("keydown", keys); app.classList.remove("wide"); };
+    cleanup = () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("keydown", keys); app.classList.remove("wide"); dropMediaUrls(); };
 
     app.innerHTML = `
       <section class="ed">
@@ -310,13 +400,19 @@ ${ADMIN ? `          <div class="card stack">
 
     function drawCanvas() {
       const x = q(), tf = x.type === "tf";
+      let shown = null;
+      if (x.media) {
+        const e = loadMedia(x.media.id);
+        shown = { kind: x.media.kind, url: e.url, name: x.media.name };
+        if (e.url === undefined) e.ready.then(() => { if (q() === x) drawCanvas(); });
+      } else if (x.image) shown = { kind: "image", url: x.image };
       $("#canvas").innerHTML = `
         <textarea id="qtext" class="ed-q" rows="1" maxlength="160" placeholder="Start typing your question" aria-label="Question text">${esc(x.text)}</textarea>
-        <div class="media" id="media">${x.image ? `
-          <img src="${esc(x.image)}" alt="Question image">
+        <div class="media${shown ? " has " + shown.kind : ""}" id="media">${shown ? `
+          ${shown.url === undefined ? '<span class="muted">Loading…</span>' : shown.url === null ? '<span class="muted">This file is missing from this browser. Replace it or remove it.</span>' : mediaTag(shown)}
           <div class="media-actions"><button class="small ghost" id="imgChange">Replace</button><button class="small danger" id="imgDel">Remove</button></div>` : `
-          <button class="drop" id="imgAdd"><span class="plus" aria-hidden="true">+</span><b>Add an image</b><span class="muted">Click to upload, or drop an image here</span></button>`}
-          <input type="file" id="imgFile" accept="image/*" hidden>
+          <button class="drop" id="imgAdd"><span class="plus" aria-hidden="true">+</span><b>Add media</b><span class="muted">Click to upload, or drop a file here</span><span class="muted formats">Picture, GIF, MP3 or MP4 · up to ${MAX_MEDIA_MB} MB</span></button>`}
+          <input type="file" id="imgFile" accept="image/*,video/*,audio/*,.mp3,.mp4,.gif" hidden>
         </div>
         <div class="ed-answers">${x.options.map((o, oi) => {
           const ok = x.correct.includes(oi);
@@ -351,12 +447,24 @@ ${ADMIN ? `          <div class="card stack">
       const file = $("#imgFile"), media = $("#media");
       const useFile = async (f) => {
         if (!f) return;
-        try { x.image = await shrinkImage(f); } catch { return toast("That file isn't an image that can be used."); }
+        const kind = mediaKind(f);
+        if (!kind) return toast("Use a picture, GIF, MP3 or MP4 file.");
+        if (f.size > MAX_MEDIA_MB * 1024 * 1024) return toast(`That file is over ${MAX_MEDIA_MB} MB. Try a shorter or smaller one.`);
+        let blob = f;
+        // GIFs keep their animation; other pictures are shrunk.
+        if (kind === "image" && f.type !== "image/gif" && !/\.gif$/i.test(f.name)) {
+          try { blob = await shrinkImage(f); } catch { return toast("That picture couldn't be opened."); }
+        }
+        const id = uid();
+        try { await mediaDb.put(id, blob); } catch { return toast("This browser is out of storage space for media."); }
+        mediaUrls.set(id, { url: URL.createObjectURL(blob), ready: Promise.resolve() });
+        x.media = { id, kind, name: f.name.slice(0, 80) };
+        x.image = "";
         touch();
         if (q() === x) drawCanvas();
       };
       ["#imgAdd", "#imgChange"].forEach((id) => { if ($(id)) $(id).onclick = () => file.click(); });
-      if ($("#imgDel")) $("#imgDel").onclick = () => { x.image = ""; touch(); drawCanvas(); };
+      if ($("#imgDel")) $("#imgDel").onclick = () => { x.image = ""; x.media = null; touch(); drawCanvas(); };
       file.onchange = () => useFile(file.files[0]);
       media.ondragover = (e) => { if (dragFrom !== null) return; e.preventDefault(); media.classList.add("drag"); };
       media.ondragleave = () => media.classList.remove("drag");
@@ -459,7 +567,8 @@ ${ADMIN ? `          <div class="card stack">
         opts.forEach((o, oi) => { if (o) { at[oi] = kept.length; kept.push(o); } });
         const correct = x.correct.filter((c) => opts[c]).map((c) => at[c]);
         const y = { type: x.type, text: x.text.trim(), options: kept, correct: x.multi ? correct : correct[0], time: x.time, points: x.points, multi: x.multi };
-        if (x.image) y.image = x.image;
+        if (x.media) y.media = x.media;
+        else if (x.image) y.image = x.image;
         return y;
       }) };
       const list = getQuizzes();
@@ -467,6 +576,7 @@ ${ADMIN ? `          <div class="card stack">
       if (at < 0) list.push(out); else list[at] = out;
       if (!setQuizzes(list)) return toast("This browser is out of storage space. Remove some images and try again.");
       dirty = false;
+      pruneMedia();
       toast("Saved " + title);
       go(quizList);
     }
@@ -564,7 +674,8 @@ ${ADMIN ? `          <div class="card stack">
     let dead = false, tick = null, pin = resume || null, uid = null;
     let game = null, secret = null, lastBoard = [], revealing = false;
     const subs = [];
-    cleanup = () => { dead = true; clearInterval(tick); subs.forEach((f) => f()); };
+    let srcs = [], shown = null;
+    cleanup = () => { dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls(); };
     app.innerHTML = `<section class="stack center home"><h2>Setting up your game…</h2></section>`;
 
     try {
@@ -573,7 +684,8 @@ ${ADMIN ? `          <div class="card stack">
         const [g, s] = await Promise.all([db.ref("games/" + pin).get(), db.ref("secrets/" + pin).get()]);
         if (!g.exists() || g.val().hostUid !== uid || !s.exists()) { save(STORE_HOSTING, null); return errorScreen("That game has ended", "Start a new one from the home screen."); }
         const media = s.val().media || [];
-        quiz = { title: g.val().quiz.title, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i], image: media[i] || "" })) };
+        quiz = { title: g.val().quiz.title, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] },
+          typeof media[i] === "string" ? { image: media[i] } : { media: media[i] || null })) };
       } else {
         const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
         for (let tries = 0; ; tries++) {
@@ -583,11 +695,13 @@ ${ADMIN ? `          <div class="card stack">
             break;
           } catch (e) { if (tries > 5 || !String(e.code || e.message).toLowerCase().includes("permission")) throw e; }
         }
-        await db.ref("secrets/" + pin).set({ correct: quiz.questions.map(corrects), media: quiz.questions.map((q) => q.image || "") });
+        // Only a reference to this browser's stored media, so a refresh can resume.
+        await db.ref("secrets/" + pin).set({ correct: quiz.questions.map(corrects), media: quiz.questions.map((q) => (validMedia(q.media) ? { id: q.media.id, kind: q.media.kind, name: q.media.name || "" } : q.image || "")) });
       }
     } catch (e) {
       return errorScreen("Couldn't start the game", fbError(e), () => hostScreen(quiz, resume));
     }
+    srcs = await Promise.all(quiz.questions.map(mediaSource));
     if (dead) return;
     save(STORE_HOSTING, { pin });
 
@@ -719,9 +833,18 @@ ${ADMIN ? `          <div class="card stack">
               <button class="ghost small" id="skip">Skip timer</button>
             </div>
             <div class="qtext">${esc(qq.text)}</div>
-            ${qq.image ? `<div class="qmedia"><img src="${esc(qq.image)}" alt=""></div>` : ""}
+            ${srcs[s.q] ? '<div class="qmedia" id="qmedia"></div>' : ""}
             <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i}">${SHAPES[i]}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
           </section>`;
+        // The same element is moved into each redraw so video and audio keep playing.
+        if (srcs[s.q]) {
+          if (!shown || shown.q !== s.q) {
+            const box = document.createElement("div");
+            box.innerHTML = mediaTag(srcs[s.q], "autoplay");
+            shown = { q: s.q, el: box.firstElementChild };
+          }
+          $("#qmedia").appendChild(shown.el);
+        }
         drawTimer();
         tick = setInterval(() => { drawTimer(); maybeReveal(); }, 200);
         $("#skip").onclick = reveal;

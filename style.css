@@ -193,14 +193,20 @@ button.typebtn:hover { box-shadow: inset 0 0 0 2px var(--spot); }
 textarea.ed-q { background: var(--fg); color: var(--ink); border: 0; border-radius: 16px; padding: 20px; text-align: center; font: 800 clamp(1.25rem, 2.6vw, 1.9rem)/1.25 var(--display); resize: none; box-shadow: 0 4px 0 rgba(0,0,0,.3); }
 textarea.ed-q::placeholder { color: #7f9298; }
 textarea.ed-q:focus { box-shadow: 0 4px 0 rgba(0,0,0,.3), 0 0 0 3px var(--spot); }
-.media { position: relative; align-self: center; width: min(100%, 520px); aspect-ratio: 16 / 9; border-radius: 16px; border: 2px dashed var(--line); background: rgba(255,255,255,.03); overflow: hidden; }
+.media { display: grid; place-items: center; text-align: center; position: relative; align-self: center; width: min(100%, 520px); aspect-ratio: 16 / 9; border-radius: 16px; border: 2px dashed var(--line); background: rgba(255,255,255,.03); overflow: hidden; }
 .media:has(img) { border-style: solid; }
 .media.drag { border-color: var(--spot); background: rgba(255,207,63,.08); }
-.media img { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--ink); }
+.media img, .media video { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--ink); }
+.media > .muted { padding: 16px; }
+.audio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; overflow-wrap: anywhere; }
+.audio .note { width: 64px; height: 64px; border-radius: 50%; background: var(--spot); color: var(--ink); display: grid; place-items: center; font-size: 2rem; }
+.audio audio { width: 360px; max-width: 100%; }
+.media .audio { width: 100%; }
+.drop .formats { font-size: .82rem; }
 button.drop { width: 100%; height: 100%; flex-direction: column; gap: 8px; background: transparent; color: var(--fg); box-shadow: none; border-radius: 0; font-weight: 600; }
 button.drop:active { transform: none; }
 .drop .plus { width: 46px; height: 46px; border-radius: 12px; background: var(--fg); color: var(--ink); display: grid; place-items: center; font: 800 1.8rem/1 var(--display); }
-.media-actions { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 8px; }
+.media-actions { position: absolute; right: 10px; top: 10px; display: flex; gap: 8px; }
 .media-actions button { background: rgba(15,29,36,.88); }
 .ed-answers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .tile { display: flex; align-items: center; gap: 12px; min-height: 78px; padding: 8px 12px 8px 8px; border-radius: 14px; background: var(--panel); transition: background .15s; }
@@ -241,7 +247,9 @@ button.linkbtn:active { transform: none; }
 /* Live question extras */
 .badge { align-self: flex-start; background: var(--spot); color: var(--ink); font-size: .75rem; font-weight: 800; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .06em; }
 .qmedia { display: flex; justify-content: center; }
-.qmedia img { max-width: 100%; height: min(34vh, 360px); object-fit: contain; border-radius: 14px; }
+.qmedia img, .qmedia video { max-width: 100%; height: min(34vh, 360px); object-fit: contain; border-radius: 14px; }
+.qmedia video { background: #000; }
+.qmedia .audio { background: var(--panel); border-radius: 14px; padding: 16px 28px; }
 .pad button.on { box-shadow: inset 0 0 0 5px #fff, 0 4px 0 rgba(0,0,0,.35); }
 
 @media (max-width: 960px) {

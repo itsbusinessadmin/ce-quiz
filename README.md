@@ -63,7 +63,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 - `correct`: the index of the right answer. For a multi-select question (`"multi": true`), a list of indexes. Players score only if they pick exactly those.
 - `time`: 5, 10, 15, 20, 30, 45, 60, 90, 120, 180 or 240 seconds.
 - `points`: `1` standard, `2` double points, `0` no points.
-- `image` (optional): a `data:image/...;base64,` picture shown on the host screen. The editor shrinks uploaded pictures for you. Quizzes are saved in the host's browser. Use **Export** / **Import JSON** to back them up.
+- `media` (optional): a picture, GIF, MP3 or MP4 shown or played on the host screen, as `{ "kind": "image" | "video" | "audio", "name": "file name", "data": "data:...;base64,..." }`. Export writes it this way; the editor stores uploads (up to 50 MB each) in the browser's IndexedDB, so a quiz's media only exists in the browser that made or imported it. Export it to move it to another computer. Quizzes are saved in the host's browser. Use **Export** / **Import JSON** to back them up.
 
 ## Credits
 
