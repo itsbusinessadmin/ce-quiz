@@ -1,4 +1,4 @@
-# Publishes the site to Firebase Hosting (https://cequiz.web.app) on every push to main.
+# Publishes the site to Firebase Hosting (https://cequiz-e7587.web.app) on every push to main.
 # Needs the FIREBASE_SERVICE_ACCOUNT repository secret; see README "Put it online".
 name: Deploy to Firebase Hosting
 
@@ -22,5 +22,5 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: ces--kahoot
+          projectId: cequiz-e7587
           channelId: live
