@@ -51,6 +51,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 ```json
 {
   "title": "My quiz",
+  "cover": { "text": "Guess the brand logo!" },
   "questions": [
     { "type": "quiz", "text": "2 + 2 = ?", "options": ["3", "4", "5"], "correct": 1, "time": 20, "points": 1 },
     { "type": "quiz", "text": "Which are even?", "options": ["2", "3", "4"], "correct": [0, 2], "multi": true, "time": 30, "points": 2 },
@@ -59,6 +60,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 }
 ```
 
+- `cover` (optional): what the big screen shows while players join, next to the game PIN and QR code: the title, a short `text` line, and a picture or GIF as `media` (same format as below).
 - `type`: `"quiz"` (2 to 4 answers) or `"tf"` (true or false).
 - `correct`: the index of the right answer. For a multi-select question (`"multi": true`), a list of indexes. Players score only if they pick exactly those.
 - `time`: 5, 10, 15, 20, 30, 45, 60, 90, 120, 180 or 240 seconds.
