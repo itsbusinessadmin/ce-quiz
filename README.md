@@ -22,7 +22,7 @@ The config values are meant to be public. Security comes from the rules, not fro
 
 **GitHub Pages:** create a public repo, upload all the files, then **Settings → Pages → Deploy from a branch → `main` / root**. Your game will be at `https://<username>.github.io/<repo>/`.
 
-**Or Firebase Hosting, all in the browser:** this repo has a GitHub Action (`.github/workflows/deploy.yml`) that publishes the site to `https://ces--kahoot.web.app` every time `main` changes. It needs a key, set up once:
+**Or Firebase Hosting, all in the browser:** this repo has a GitHub Action (`.github/workflows/deploy.yml`) that publishes the site to `https://cequiz.web.app` (the `cequiz` site in the `ces--kahoot` project, set in `firebase.json`) every time `main` changes. It needs a key, set up once:
 
 1. Open [console.cloud.google.com/iam-admin/serviceaccounts](https://console.cloud.google.com/iam-admin/serviceaccounts) and pick the `ces--kahoot` project.
 2. **Create service account** → any name (e.g. `github-deploy`) → **Create and continue** → role **Firebase Hosting Admin** → **Done**.
