@@ -1030,26 +1030,29 @@ ${ADMIN ? `          <div class="card stack">
     const fsKey = (e) => { if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) fsToggle(); };
     fsBtn.onclick = fsToggle;
     fsLabel();
-    // Background music on the host's screen. It plays everywhere except while a
-    // question is showing. If the browser blocks it, the button asks for a click.
-    const bgMusic = new Audio("music/background.mp3");
-    bgMusic.loop = true;
-    bgMusic.volume = 0.6;
-    let muted = !!load(STORE_MUTED, false), blocked = false, musicWanted = false;
+    // Music on the host's screen: the question track while a question is showing
+    // (from the start each time), the background track everywhere else. If the
+    // browser blocks it, the button asks for a click.
+    const tracks = { bg: new Audio("music/background.mp3"), question: new Audio("music/question.mp3") };
+    Object.values(tracks).forEach((a) => { a.loop = true; a.volume = 0.6; });
+    let muted = !!load(STORE_MUTED, false), blocked = false, scene = null, playedQk = null;
     const sndBtn = document.createElement("button");
     sndBtn.className = "ghost small";
     const sndLabel = () => {
       sndBtn.textContent = blocked && !muted ? "Click for sound" : muted ? "Sound off" : "Sound on";
       sndBtn.classList.toggle("attn", blocked && !muted);
     };
-    const music = (on) => {
-      musicWanted = on;
-      if (!on || muted) return bgMusic.pause();
-      if (bgMusic.paused) bgMusic.play().then(() => { blocked = false; sndLabel(); }, () => { blocked = true; sndLabel(); });
+    const music = (next, restart) => {
+      scene = next;
+      Object.entries(tracks).forEach(([k, a]) => {
+        if (k !== next || muted) return a.pause();
+        if (restart) a.currentTime = 0;
+        if (a.paused) a.play().then(() => { blocked = false; sndLabel(); }, () => { blocked = true; sndLabel(); });
+      });
     };
     sndBtn.onclick = () => {
       if (!blocked) { muted = !muted; save(STORE_MUTED, muted); }
-      music(musicWanted);
+      music(scene);
       sndLabel();
     };
     sndLabel();
@@ -1058,8 +1061,7 @@ ${ADMIN ? `          <div class="card stack">
     app.classList.add("stage");
     cleanup = () => {
       dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls();
-      bgMusic.pause();
-      bgMusic.removeAttribute("src");
+      Object.values(tracks).forEach((a) => { a.pause(); a.removeAttribute("src"); });
       app.classList.remove("stage");
       document.removeEventListener("fullscreenchange", fsLabel);
       document.removeEventListener("keydown", fsKey);
@@ -1182,7 +1184,13 @@ ${ADMIN ? `          <div class="card stack">
       if (dead) return;
       const s = st(), list = rankOf(game.players, game.scores);
       clearInterval(tick);
-      music(s.phase !== "question");
+      if (s.phase !== "question") music("bg");
+      else {
+        // A question with its own video or audio plays that instead of the question music.
+        const own = srcs[s.q] && srcs[s.q].kind !== "image";
+        music(own ? null : "question", s.qk !== playedQk);
+        playedQk = s.qk;
+      }
       if (s.phase === "lobby") {
         const url = joinUrl(pin);
         // Draw the lobby once; joins only refresh the participants list, so a GIF keeps playing.
