@@ -16,6 +16,71 @@
     '<svg class="shape" viewBox="0 0 40 40" aria-hidden="true"><rect x="4" y="4" width="32" height="32" rx="4"/></svg>',
   ];
 
+  const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const TYPES = { quiz: "Quiz", tf: "True or false" };
+  const TYPE_HINT = { quiz: "Up to 4 answers", tf: "Two answers" };
+  const TYPE_ICON = {
+    quiz: '<svg class="ticon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="9" height="9" rx="2" style="fill:var(--a0)"/><rect x="13" y="2" width="9" height="9" rx="2" style="fill:var(--a1)"/><rect x="2" y="13" width="9" height="9" rx="2" style="fill:var(--a2)"/><rect x="13" y="13" width="9" height="9" rx="2" style="fill:var(--a3)"/></svg>',
+    tf: '<svg class="ticon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="9" height="20" rx="2" style="fill:var(--a0)"/><rect x="13" y="2" width="9" height="20" rx="2" style="fill:var(--a1)"/></svg>',
+  };
+  const TIMES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
+  const POINTS = [
+    { v: 1, name: "Standard", hint: "Normal points for correct answers." },
+    { v: 2, name: "Double points", hint: "Twice the points for correct answers." },
+    { v: 0, name: "No points", hint: "A warm-up question that doesn't count." },
+  ];
+  function timeLabel(t) {
+    const m = Math.floor(t / 60), s = t % 60;
+    if (!m) return t + " seconds";
+    return m + (m === 1 ? " minute" : " minutes") + (s ? " " + s + " seconds" : "");
+  }
+  // Quizzes saved before multi-select store `correct` as one index.
+  const corrects = (q) => [].concat(q.correct);
+  const validImage = (s) => typeof s === "string" && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(s);
+
+  function newQuestion(type) {
+    return { type, text: "", options: type === "tf" ? ["True", "False"] : ["", "", "", ""], correct: [0], time: 20, points: 1, multi: false, image: "" };
+  }
+  function editable(q) {
+    const type = q.type === "tf" ? "tf" : "quiz";
+    const options = q.options.slice();
+    while (type === "quiz" && options.length < 4) options.push("");
+    return {
+      type, text: q.text || "", options, correct: corrects(q).slice(),
+      time: TIMES.includes(q.time) ? q.time : 20,
+      points: [0, 1, 2].includes(q.points) ? q.points : 1,
+      multi: type === "quiz" && !!q.multi,
+      image: validImage(q.image) ? q.image : "",
+    };
+  }
+  function problem(x) {
+    if (!x.text.trim()) return "Add the question text.";
+    if (x.options.filter((o) => o.trim()).length < 2) return "Add at least 2 answers.";
+    if (!x.correct.some((c) => (x.options[c] || "").trim())) return "Mark a correct answer.";
+    return "";
+  }
+  // Shrinks a picked image so quizzes stay small enough for browser storage.
+  function shrinkImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!/^image\//.test(file.type)) return reject(new Error("not an image"));
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const k = Math.min(1, 960 / img.width, 540 / img.height);
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL("image/jpeg", 0.75));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("unreadable image")); };
+      img.src = url;
+    });
+  }
+
   // ---------- small helpers ----------
   const app = document.getElementById("app");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,9 +91,10 @@
     try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
   }
   function save(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* storage blocked: keep going in memory */ }
+    try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch { return false; /* storage blocked or full */ }
   }
   function toast(msg) {
+    document.querySelectorAll(".toast").forEach((old) => old.remove());
     const t = document.createElement("div");
     t.className = "toast";
     t.textContent = msg;
@@ -47,13 +113,13 @@
     // drop the old built-in example that earlier versions saved to the browser
     return Array.isArray(list) ? list.filter((q) => q && q.id !== "sample-space") : [];
   }
-  function setQuizzes(list) { save(STORE_QUIZZES, list); }
+  function setQuizzes(list) { return save(STORE_QUIZZES, list); }
 
   function validQuiz(q) {
     return q && typeof q.title === "string" && Array.isArray(q.questions) && q.questions.length > 0 &&
       q.questions.every((x) => typeof x.text === "string" && Array.isArray(x.options) &&
-        x.options.length >= 2 && x.options.length <= 4 && Number.isInteger(x.correct) &&
-        x.correct >= 0 && x.correct < x.options.length);
+        x.options.length >= 2 && x.options.length <= 4 && x.options.every((o) => typeof o === "string") &&
+        corrects(x).length > 0 && corrects(x).every((c) => Number.isInteger(c) && c >= 0 && c < x.options.length));
   }
 
   let cleanup = null; // tears down the current screen's timers/connections
@@ -136,7 +202,7 @@ ${ADMIN ? `          <div class="card stack">
           </div>`).join("")}</div>
       </section>`;
     $("#back").onclick = () => go(home);
-    $("#new").onclick = () => go(() => editor({ id: uid(), title: "", questions: [{ text: "", options: ["", "", "", ""], correct: 0, time: 20 }] }));
+    $("#new").onclick = () => go(() => editor({ id: uid(), title: "", questions: [newQuestion("quiz")] }));
     app.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => go(() => editor(JSON.parse(JSON.stringify(list[+b.dataset.edit])))));
     app.querySelectorAll("[data-exp]").forEach((b) => b.onclick = () => {
       const q = list[+b.dataset.exp];
@@ -161,7 +227,10 @@ ${ADMIN ? `          <div class="card stack">
         const q = JSON.parse(await f.text());
         if (!validQuiz(q)) throw new Error();
         q.id = uid();
-        q.questions.forEach((x) => { x.time = [5, 10, 20, 30, 60].includes(x.time) ? x.time : 20; });
+        q.questions = q.questions.map((x) => {
+          const y = editable(x);
+          return Object.assign(y, { options: x.options.slice(), correct: y.multi ? y.correct : y.correct[0], image: y.image || undefined });
+        });
         setQuizzes([...getQuizzes(), q]);
         toast("Imported " + q.title);
         go(quizList);
@@ -169,65 +238,249 @@ ${ADMIN ? `          <div class="card stack">
     };
   }
 
+  // Three panes: the question list on the left, the question being edited in
+  // the middle, and its settings on the right. Correct answers are kept as an
+  // index array while editing and saved back as a number for single select.
   function editor(quiz) {
-    function draw() {
-      app.innerHTML = `
-        <section class="stack narrow" style="max-width:760px">
-          <div class="row"><button class="ghost small" id="cancel">← Cancel</button><div class="spacer"></div><button class="small" id="saveBtn">Save quiz</button></div>
-          <label class="label" for="title">Quiz title</label>
-          <input id="title" maxlength="80" placeholder="e.g. Friday Trivia" value="${esc(quiz.title)}">
-          ${quiz.questions.map((q, qi) => `
-            <div class="card qedit" data-q="${qi}">
-              <div class="row"><h3>Question ${qi + 1}</h3><div class="spacer"></div>
-                <label class="label" for="time${qi}">Time</label>
-                <select id="time${qi}" data-time="${qi}" style="width:auto">${[5, 10, 20, 30, 60].map((t) => `<option value="${t}" ${q.time === t ? "selected" : ""}>${t}s</option>`).join("")}</select>
-                <button class="small danger" data-rmq="${qi}" ${quiz.questions.length < 2 ? "disabled" : ""}>Remove</button></div>
-              <input id="qt${qi}" data-text="${qi}" maxlength="160" placeholder="Type your question" value="${esc(q.text)}">
-              ${q.options.map((o, oi) => `
-                <div class="optrow">
-                  <span class="swatch" style="background:var(--a${oi})"></span>
-                  <input type="radio" id="c${qi}_${oi}" name="c${qi}" data-correct="${qi}" value="${oi}" ${q.correct === oi ? "checked" : ""} aria-label="Mark answer ${oi + 1} correct">
-                  <input id="o${qi}_${oi}" data-opt="${qi}" data-oi="${oi}" maxlength="80" placeholder="Answer ${oi + 1}${oi > 1 ? " (optional)" : ""}" value="${esc(o)}">
-                </div>`).join("")}
-              <p class="muted" style="font-size:.9rem">Select the circle next to the correct answer.</p>
-            </div>`).join("")}
-          <button class="ghost" id="addQ">+ Add question</button>
-        </section>`;
-      $("#cancel").onclick = () => go(quizList);
-      $("#title").oninput = (e) => { quiz.title = e.target.value; };
-      app.querySelectorAll("[data-text]").forEach((el) => el.oninput = () => { quiz.questions[+el.dataset.text].text = el.value; });
-      app.querySelectorAll("[data-opt]").forEach((el) => el.oninput = () => { quiz.questions[+el.dataset.opt].options[+el.dataset.oi] = el.value; });
-      app.querySelectorAll("[data-correct]").forEach((el) => el.onchange = () => { quiz.questions[+el.dataset.correct].correct = +el.value; });
-      app.querySelectorAll("[data-time]").forEach((el) => el.onchange = () => { quiz.questions[+el.dataset.time].time = +el.value; });
-      app.querySelectorAll("[data-rmq]").forEach((el) => el.onclick = () => { quiz.questions.splice(+el.dataset.rmq, 1); draw(); });
-      $("#addQ").onclick = () => { quiz.questions.push({ text: "", options: ["", "", "", ""], correct: 0, time: 20 }); draw(); app.querySelector(`#qt${quiz.questions.length - 1}`).focus(); };
-      $("#saveBtn").onclick = saveQuiz;
+    quiz.questions = quiz.questions.map(editable);
+    let cur = 0, dirty = false, adding = false, dragFrom = null, showProblems = false;
+    const q = () => quiz.questions[cur];
+    const touch = () => { dirty = true; };
+    const warn = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } };
+    const keys = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveQuiz(); } };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("keydown", keys);
+    app.classList.add("wide");
+    cleanup = () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("keydown", keys); app.classList.remove("wide"); };
+
+    app.innerHTML = `
+      <section class="ed">
+        <header class="ed-top">
+          <button class="ghost small" id="exit">← Exit</button>
+          <input id="title" class="ed-title" maxlength="80" placeholder="Quiz title" aria-label="Quiz title" value="${esc(quiz.title)}">
+          <div class="spacer"></div>
+          <button class="small" id="saveBtn">Save quiz</button>
+        </header>
+        <aside class="ed-rail" aria-label="Questions">
+          <ol class="slides" id="slides"></ol>
+          <div class="adder" id="adder"></div>
+        </aside>
+        <div class="ed-canvas" id="canvas"></div>
+        <aside class="ed-props" id="props" aria-label="Question settings"></aside>
+      </section>`;
+
+    function drawSlides() {
+      $("#slides").innerHTML = quiz.questions.map((x, i) => `
+        <li class="slide${i === cur ? " on" : ""}${showProblems && problem(x) ? " bad" : ""}" draggable="true" data-i="${i}">
+          <span class="num">${i + 1}</span>
+          <button class="thumb" data-pick="${i}" ${i === cur ? 'aria-current="true"' : ""} title="${esc(showProblems ? problem(x) : "")}">
+            <span class="t-type"><span>${TYPES[x.type]}</span><span>${x.time}s</span></span>
+            <span class="t-text">${x.text.trim() ? esc(x.text) : '<span class="muted">No question yet</span>'}</span>
+            <span class="t-opts">${x.options.map((o, oi) => `<i class="c${oi}${x.correct.includes(oi) ? " ok" : ""}${o.trim() ? "" : " empty"}"></i>`).join("")}</span>
+          </button>
+        </li>`).join("");
+      app.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => select(+b.dataset.pick));
+      app.querySelectorAll(".slide").forEach((li) => {
+        li.ondragstart = (e) => { dragFrom = +li.dataset.i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", ""); };
+        li.ondragover = (e) => { if (dragFrom === null) return; e.preventDefault(); li.classList.add("over"); };
+        li.ondragleave = () => li.classList.remove("over");
+        li.ondrop = (e) => { e.preventDefault(); const from = dragFrom; dragFrom = null; move(from, +li.dataset.i); };
+        li.ondragend = () => { dragFrom = null; };
+      });
     }
-    function saveQuiz() {
-      const out = { id: quiz.id, title: quiz.title.trim(), questions: [] };
-      if (!out.title) return toast("Give the quiz a title.");
-      for (let i = 0; i < quiz.questions.length; i++) {
-        const q = quiz.questions[i];
-        const opts = q.options.map((o) => o.trim());
-        if (!q.text.trim()) return toast(`Question ${i + 1} needs text.`);
-        if (!opts[q.correct]) return toast(`Question ${i + 1}: the correct answer is empty.`);
-        // Keep slot order (colours stay put) but drop empty trailing slots.
-        const kept = [];
-        let correct = 0;
-        opts.forEach((o, oi) => { if (o) { if (oi === q.correct) correct = kept.length; kept.push(o); } });
-        if (kept.length < 2) return toast(`Question ${i + 1} needs at least 2 answers.`);
-        out.questions.push({ text: q.text.trim(), options: kept, correct, time: q.time });
+
+    function drawAdder() {
+      $("#adder").innerHTML = adding ? `
+        <span class="label">Add a question</span>
+        ${Object.keys(TYPES).map((t) => `<button class="typebtn" data-add="${t}">${TYPE_ICON[t]}<span><b>${TYPES[t]}</b><small>${TYPE_HINT[t]}</small></span></button>`).join("")}
+        <button class="ghost small" id="addCancel">Cancel</button>` : `<button class="small" id="addBtn">+ Add question</button>`;
+      if (adding) {
+        app.querySelectorAll("[data-add]").forEach((b) => b.onclick = () => {
+          quiz.questions.splice(cur + 1, 0, newQuestion(b.dataset.add));
+          adding = false;
+          touch();
+          select(cur + 1);
+          $("#qtext").focus();
+        });
+        $("#addCancel").onclick = () => { adding = false; drawAdder(); };
+      } else {
+        $("#addBtn").onclick = () => { adding = true; drawAdder(); };
       }
-      const list = getQuizzes().filter((q) => q.id !== out.id);
-      const at = getQuizzes().findIndex((q) => q.id === out.id);
-      list.splice(at < 0 ? list.length : at, 0, out);
-      setQuizzes(list);
-      toast("Saved " + out.title);
+    }
+
+    function drawCanvas() {
+      const x = q(), tf = x.type === "tf";
+      $("#canvas").innerHTML = `
+        <textarea id="qtext" class="ed-q" rows="1" maxlength="160" placeholder="Start typing your question" aria-label="Question text">${esc(x.text)}</textarea>
+        <div class="media" id="media">${x.image ? `
+          <img src="${esc(x.image)}" alt="Question image">
+          <div class="media-actions"><button class="small ghost" id="imgChange">Replace</button><button class="small danger" id="imgDel">Remove</button></div>` : `
+          <button class="drop" id="imgAdd"><span class="plus" aria-hidden="true">+</span><b>Add an image</b><span class="muted">Click to upload, or drop an image here</span></button>`}
+          <input type="file" id="imgFile" accept="image/*" hidden>
+        </div>
+        <div class="ed-answers">${x.options.map((o, oi) => {
+          const ok = x.correct.includes(oi);
+          return `<div class="tile c${oi}${ok ? " ok" : ""}${tf || o.trim() ? " filled" : ""}">
+            <span class="tile-shape">${SHAPES[oi]}</span>
+            ${tf ? `<span class="tile-fixed">${esc(o)}</span>` : `<input data-opt="${oi}" maxlength="80" placeholder="Add answer ${oi + 1}${oi > 1 ? " (optional)" : ""}" value="${esc(o)}" aria-label="Answer ${oi + 1}">`}
+            <button class="mark${x.multi ? " multi" : ""}" data-mark="${oi}" aria-pressed="${ok}" aria-label="Answer ${oi + 1} is correct" title="${ok ? "Correct answer" : "Mark as correct"}">${CHECK}</button>
+          </div>`;
+        }).join("")}</div>
+        <p class="muted hint">${x.multi ? "Tick every correct answer. Players score only if they pick all of them and nothing else." : "Click the circle on the correct answer."}</p>`;
+
+      const ta = $("#qtext");
+      const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
+      ta.oninput = () => { x.text = ta.value; fit(); touch(); drawSlides(); };
+      ta.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); }; // question text is one paragraph
+      fit();
+      app.querySelectorAll("[data-opt]").forEach((el) => el.oninput = () => {
+        x.options[+el.dataset.opt] = el.value;
+        el.closest(".tile").classList.toggle("filled", !!el.value.trim());
+        touch();
+        drawSlides();
+      });
+      app.querySelectorAll("[data-mark]").forEach((b) => b.onclick = () => {
+        const oi = +b.dataset.mark;
+        if (!x.multi) x.correct = [oi];
+        else x.correct = x.correct.includes(oi) ? x.correct.filter((c) => c !== oi) : [...x.correct, oi].sort();
+        touch();
+        drawCanvas();
+        drawSlides();
+      });
+
+      const file = $("#imgFile"), media = $("#media");
+      const useFile = async (f) => {
+        if (!f) return;
+        try { x.image = await shrinkImage(f); } catch { return toast("That file isn't an image that can be used."); }
+        touch();
+        if (q() === x) drawCanvas();
+      };
+      ["#imgAdd", "#imgChange"].forEach((id) => { if ($(id)) $(id).onclick = () => file.click(); });
+      if ($("#imgDel")) $("#imgDel").onclick = () => { x.image = ""; touch(); drawCanvas(); };
+      file.onchange = () => useFile(file.files[0]);
+      media.ondragover = (e) => { if (dragFrom !== null) return; e.preventDefault(); media.classList.add("drag"); };
+      media.ondragleave = () => media.classList.remove("drag");
+      media.ondrop = (e) => { e.preventDefault(); media.classList.remove("drag"); useFile(e.dataTransfer.files[0]); };
+    }
+
+    function drawProps() {
+      const x = q(), tf = x.type === "tf", n = quiz.questions.length;
+      const opt = (name, val, on, title, hint, off) => `
+        <label class="opt${off ? " off" : ""}"><input type="radio" name="${name}" value="${val}" ${on ? "checked" : ""} ${off ? "disabled" : ""}>
+          <span><b>${title}</b><small>${hint}</small></span></label>`;
+      $("#props").innerHTML = `
+        <div class="row"><h3>Question ${cur + 1}</h3><div class="spacer"></div><span class="muted">of ${n}</span></div>
+        <fieldset class="field"><legend class="label">Question type</legend>
+          <div class="typegrid">${Object.keys(TYPES).map((t) => `
+            <label class="opt typeopt"><input type="radio" name="ptype" value="${t}" ${x.type === t ? "checked" : ""}>${TYPE_ICON[t]}<b>${TYPES[t]}</b></label>`).join("")}</div>
+        </fieldset>
+        <div class="field"><label class="label" for="ptime">Time limit</label>
+          <select id="ptime">${TIMES.map((t) => `<option value="${t}" ${x.time === t ? "selected" : ""}>${timeLabel(t)}</option>`).join("")}</select>
+          <button class="linkbtn" id="timeAll">Use this time for every question</button>
+        </div>
+        <fieldset class="field"><legend class="label">Points</legend>
+          ${POINTS.map((p) => opt("ppts", p.v, x.points === p.v, p.name, p.hint)).join("")}
+        </fieldset>
+        <fieldset class="field"><legend class="label">Answer options</legend>
+          ${opt("pmulti", 0, !x.multi, "Single select", "Players pick one answer.", tf)}
+          ${opt("pmulti", 1, x.multi, "Multi-select", "Players can pick several answers, then submit.", tf)}
+        </fieldset>
+        <div class="props-foot">
+          <button class="ghost small" id="up" ${cur === 0 ? "disabled" : ""} aria-label="Move question up" title="Move up">↑</button>
+          <button class="ghost small" id="down" ${cur === n - 1 ? "disabled" : ""} aria-label="Move question down" title="Move down">↓</button>
+          <button class="ghost small grow" id="dup">Duplicate</button>
+          <button class="danger small grow" id="del" ${n < 2 ? "disabled" : ""}>Delete</button>
+        </div>`;
+
+      app.querySelectorAll("[name=ptype]").forEach((el) => el.onchange = () => {
+        if (el.value === "tf") { x.keep = x.options; x.options = ["True", "False"]; x.multi = false; }
+        else { x.options = x.keep || ["", "", "", ""]; }
+        x.type = el.value;
+        x.correct = [0];
+        touch();
+        drawAll();
+      });
+      $("#ptime").onchange = (e) => { x.time = +e.target.value; touch(); drawSlides(); };
+      $("#timeAll").onclick = () => {
+        quiz.questions.forEach((y) => { y.time = x.time; });
+        touch();
+        drawSlides();
+        toast("Every question now has " + timeLabel(x.time));
+      };
+      app.querySelectorAll("[name=ppts]").forEach((el) => el.onchange = () => { x.points = +el.value; touch(); });
+      app.querySelectorAll("[name=pmulti]").forEach((el) => el.onchange = () => {
+        x.multi = el.value === "1";
+        if (!x.multi) x.correct = x.correct.slice(0, 1);
+        if (!x.correct.length) x.correct = [0];
+        touch();
+        drawCanvas();
+        drawSlides();
+      });
+      $("#up").onclick = () => move(cur, cur - 1);
+      $("#down").onclick = () => move(cur, cur + 1);
+      $("#dup").onclick = () => {
+        quiz.questions.splice(cur + 1, 0, JSON.parse(JSON.stringify(x)));
+        touch();
+        select(cur + 1);
+      };
+      $("#del").onclick = (e) => {
+        const b = e.currentTarget;
+        if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Tap again"; return; }
+        quiz.questions.splice(cur, 1);
+        touch();
+        select(Math.min(cur, quiz.questions.length - 1));
+      };
+    }
+
+    function drawAll() { drawSlides(); drawAdder(); drawCanvas(); drawProps(); }
+    function select(i) { cur = i; drawAll(); }
+    function move(from, to) {
+      if (from === null || from === to || to < 0 || to >= quiz.questions.length) return drawSlides();
+      const x = q();
+      quiz.questions.splice(to, 0, quiz.questions.splice(from, 1)[0]);
+      cur = quiz.questions.indexOf(x);
+      touch();
+      drawSlides();
+      drawProps();
+    }
+
+    function saveQuiz() {
+      const title = quiz.title.trim();
+      if (!title) { $("#title").focus(); return toast("Give the quiz a title."); }
+      const bad = quiz.questions.findIndex(problem);
+      if (bad >= 0) {
+        showProblems = true;
+        select(bad);
+        return toast(`Question ${bad + 1}: ${problem(quiz.questions[bad])}`);
+      }
+      const out = { id: quiz.id, title, questions: quiz.questions.map((x) => {
+        // Keep slot order (colours stay put) but drop empty slots.
+        const opts = x.options.map((o) => o.trim()), kept = [], at = [];
+        opts.forEach((o, oi) => { if (o) { at[oi] = kept.length; kept.push(o); } });
+        const correct = x.correct.filter((c) => opts[c]).map((c) => at[c]);
+        const y = { type: x.type, text: x.text.trim(), options: kept, correct: x.multi ? correct : correct[0], time: x.time, points: x.points, multi: x.multi };
+        if (x.image) y.image = x.image;
+        return y;
+      }) };
+      const list = getQuizzes();
+      const at = list.findIndex((y) => y.id === out.id);
+      if (at < 0) list.push(out); else list[at] = out;
+      if (!setQuizzes(list)) return toast("This browser is out of storage space. Remove some images and try again.");
+      dirty = false;
+      toast("Saved " + title);
       go(quizList);
     }
-    // Pad options to four editable slots.
-    quiz.questions.forEach((q) => { while (q.options.length < 4) q.options.push(""); });
-    draw();
+
+    $("#title").oninput = (e) => { quiz.title = e.target.value; touch(); };
+    $("#saveBtn").onclick = saveQuiz;
+    $("#exit").onclick = (e) => {
+      const b = e.currentTarget;
+      if (dirty && !b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Discard changes?"; return; }
+      dirty = false;
+      go(quizList);
+    };
+    drawAll();
+    if (!quiz.title) $("#title").focus();
   }
 
   function pickQuiz() {
@@ -319,9 +572,10 @@ ${ADMIN ? `          <div class="card stack">
       if (resume) {
         const [g, s] = await Promise.all([db.ref("games/" + pin).get(), db.ref("secrets/" + pin).get()]);
         if (!g.exists() || g.val().hostUid !== uid || !s.exists()) { save(STORE_HOSTING, null); return errorScreen("That game has ended", "Start a new one from the home screen."); }
-        quiz = { title: g.val().quiz.title, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] })) };
+        const media = s.val().media || [];
+        quiz = { title: g.val().quiz.title, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i], image: media[i] || "" })) };
       } else {
-        const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ text: q.text, options: q.options, time: q.time })) };
+        const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
         for (let tries = 0; ; tries++) {
           pin = String(Math.floor(100000 + Math.random() * 900000));
           try {
@@ -329,7 +583,7 @@ ${ADMIN ? `          <div class="card stack">
             break;
           } catch (e) { if (tries > 5 || !String(e.code || e.message).toLowerCase().includes("permission")) throw e; }
         }
-        await db.ref("secrets/" + pin).set({ correct: quiz.questions.map((q) => q.correct) });
+        await db.ref("secrets/" + pin).set({ correct: quiz.questions.map(corrects), media: quiz.questions.map((q) => q.image || "") });
       }
     } catch (e) {
       return errorScreen("Couldn't start the game", fbError(e), () => hostScreen(quiz, resume));
@@ -371,19 +625,24 @@ ${ADMIN ? `          <div class="card stack">
     }
 
     async function scoreQuestion() {
-      const s = st(), qq = q(), correct = qq.correct;
+      const s = st(), qq = q(), correct = corrects(qq), pts = qq.points ?? 1;
       const ans = (await gref.child("answers/" + s.qk).get()).val() || {};
       lastBoard = rankOf(game.players, game.scores).map((p) => p.uid);
-      const counts = qq.options.map((_, i) => Object.values(ans).filter((a) => a.c === i).length);
+      // Multi-select answers arrive as a bitmask of the picked options.
+      const want = qq.multi ? correct.reduce((m, i) => m | (1 << i), 0) : correct[0];
+      const picked = (a, i) => (qq.multi ? (a.c >> i) & 1 : a.c === i);
+      const counts = qq.options.map((_, i) => Object.values(ans).filter((a) => picked(a, i)).length);
       const upd = {};
       Object.keys(game.players).forEach((id) => {
         const prev = game.scores[id] || { score: 0, streak: 0 };
         const a = ans[id];
-        const ok = !!a && a.c === correct;
+        const ok = !!a && a.c === want;
         let gained = 0, streak = 0;
-        if (ok) {
+        if (ok && !pts) {
+          streak = prev.streak || 0; // a no-points question neither scores nor breaks a streak
+        } else if (ok) {
           streak = (prev.streak || 0) + 1;
-          gained = scorePoints(a.at - s.startAt, s.time);
+          gained = scorePoints(a.at - s.startAt, s.time) * pts;
           if (streak >= 2) gained += Math.min(500, (streak - 1) * 100);
         }
         upd["scores/" + id] = { score: (prev.score || 0) + gained, streak, last: { q: s.q, correct: ok, gained, answered: !!a } };
@@ -455,11 +714,12 @@ ${ADMIN ? `          <div class="card stack">
           <section class="stack" style="flex:1">
             <div class="qhead">
               <div class="timer" id="timer"><span>${qq.time}</span></div>
-              <div class="stack grow" style="gap:2px"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span></div>
+              <div class="stack grow" style="gap:6px"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span>${badges(qq)}</div>
               <div class="stack center stats" style="gap:0"><span class="big" style="font-size:2.4rem">${n}<span class="muted" style="font-size:1.2rem">/${online().length}</span></span><span class="label">answered</span></div>
               <button class="ghost small" id="skip">Skip timer</button>
             </div>
             <div class="qtext">${esc(qq.text)}</div>
+            ${qq.image ? `<div class="qmedia"><img src="${esc(qq.image)}" alt=""></div>` : ""}
             <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i}">${SHAPES[i]}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
           </section>`;
         drawTimer();
@@ -467,14 +727,14 @@ ${ADMIN ? `          <div class="card stack">
         $("#skip").onclick = reveal;
       } else if (s.phase === "reveal") {
         const counts = s.counts || qq.options.map(() => 0);
-        const max = Math.max(1, ...counts);
+        const max = Math.max(1, ...counts), right = corrects(s);
         app.innerHTML = `
           <section class="stack" style="flex:1">
             <div class="row"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span><div class="spacer"></div><button id="next">Next</button></div>
             <div class="qtext">${esc(qq.text)}</div>
             <div class="bars" style="grid-template-columns:repeat(${qq.options.length},1fr)">${counts.map((n, i) => `
-              <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${i === s.correct ? 1 : .35}"></div></div>`).join("")}</div>
-            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i} ${i === s.correct ? "" : "dim"}">${SHAPES[i]}<span class="txt">${esc(o)}</span>${i === s.correct ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
+              <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${right.includes(i) ? 1 : .35}"></div></div>`).join("")}</div>
+            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i} ${right.includes(i) ? "" : "dim"}">${SHAPES[i]}<span class="txt">${esc(o)}</span>${right.includes(i) ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
           </section>`;
         $("#next").onclick = next;
       } else if (s.phase === "board") {
@@ -547,12 +807,12 @@ ${ADMIN ? `          <div class="card stack">
     subs.push(() => { conRef.off("value", conCb); gref.child("presence/" + uid).remove().catch(() => {}); });
 
     const game = { quiz: null, state: null, players: {}, scores: {}, answers: {}, gone: false };
-    let picked = null, tooLate = false;
+    let picked = null, tooLate = false, sel = [];
     const onVal = (ref, fn) => { const cb = ref.on("value", (s) => { if (!dead) fn(s.val()); }); subs.push(() => ref.off("value", cb)); };
     onVal(gref.child("quiz"), (v) => { if (v) game.quiz = v; render(); });
     onVal(gref.child("state"), (v) => {
       if (!v) { game.gone = true; return render(); }
-      if (!game.state || v.qk !== game.state.qk) { picked = null; tooLate = false; }
+      if (!game.state || v.qk !== game.state.qk) { picked = null; tooLate = false; sel = []; }
       game.state = v;
       render();
     });
@@ -598,9 +858,17 @@ ${ADMIN ? `          <div class="card stack">
           app.innerHTML = `${header(s, you)}<section class="stack center home"><h2>Answer locked in</h2><p class="muted">${n} of ${order.length} have answered…</p></section>`;
         } else {
           app.innerHTML = `${header(s, you)}
-            <p class="stack" style="font-weight:700;font-size:1.15rem;margin-block:12px">${esc(q.text)} <span class="muted" id="left" style="font-size:.9rem">${left()}s left · ${n} answered</span></p>
-            <div class="pad" style="${q.options.length === 2 ? "grid-template-columns:1fr" : ""}">${q.options.map((o, i) => `<button class="c${i}" data-c="${i}" aria-label="${esc(o)}">${SHAPES[i]}<span>${esc(o)}</span></button>`).join("")}</div>`;
-          app.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => answer(+b.dataset.c));
+            <div class="stack" style="gap:6px;margin-block:12px"><p style="font-weight:700;font-size:1.15rem">${esc(q.text)}</p>
+              <div class="row" style="gap:8px">${badges(q)}<span class="muted" id="left" style="font-size:.9rem">${left()}s left · ${n} answered</span></div></div>
+            <div class="pad" style="${q.options.length === 2 ? "grid-template-columns:1fr" : ""}">${q.options.map((o, i) => `<button class="c${i}${sel.includes(i) ? " on" : ""}" data-c="${i}" aria-label="${esc(o)}"${q.multi ? ` aria-pressed="${sel.includes(i)}"` : ""}>${SHAPES[i]}<span>${esc(o)}</span></button>`).join("")}</div>
+            ${q.multi ? `<button id="submit" style="margin-top:12px" ${sel.length ? "" : "disabled"}>Submit ${sel.length ? sel.length + (sel.length === 1 ? " answer" : " answers") : ""}</button>` : ""}`;
+          app.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => {
+            const c = +b.dataset.c;
+            if (!q.multi) return answer(c);
+            sel = sel.includes(c) ? sel.filter((x) => x !== c) : [...sel, c];
+            render();
+          });
+          if (q.multi) $("#submit").onclick = () => answer(sel.reduce((m, i) => m | (1 << i), 0));
           tick = setInterval(() => { const el = $("#left"); if (el) el.textContent = `${left()}s left · ${n} answered`; }, 250);
         }
       } else if (s.phase === "reveal" || s.phase === "board") {
@@ -612,7 +880,7 @@ ${ADMIN ? `          <div class="card stack">
             <h2>${l.correct ? "Correct" : l.answered ? "Not quite" : "Time's up"}</h2>
             <span class="big">${l.correct ? "+" + l.gained : "+0"}</span>
             ${l.correct && mine.streak >= 2 ? `<p>Answer streak: ${mine.streak}</p>` : ""}
-            ${l.correct ? "" : `<p>The answer was <b>${esc(q.options[s.correct])}</b></p>`}
+            ${l.correct ? "" : `<p>${corrects(s).length > 1 ? "The answers were" : "The answer was"} <b>${corrects(s).map((i) => esc(q.options[i])).join(", ")}</b></p>`}
             <p class="muted">You're ${ordinal(rank)} of ${order.length}${ahead ? `, ${ahead.score - you.score} points behind ${esc(ahead.nick)}` : ""}</p>
           </section>`;
       } else if (s.phase === "end") {
@@ -626,6 +894,15 @@ ${ADMIN ? `          <div class="card stack">
         $("#home").onclick = () => { save(STORE_PLAYER, Object.assign(load(STORE_PLAYER, {}), { pin: null })); go(home); };
       }
     }
+  }
+
+  // Small tags under a live question for settings players should know about.
+  function badges(q) {
+    const tags = [];
+    if (q.points === 2) tags.push("Double points");
+    if (q.points === 0) tags.push("No points");
+    if (q.multi) tags.push("Pick all that apply");
+    return tags.map((t) => `<span class="badge">${t}</span>`).join("");
   }
 
   function ordinal(n) {
