@@ -38,7 +38,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 
 1. Open the admin page, `admin.html` (for example `https://<username>.github.io/<repo>/admin.html`) → **Host a game** → pick a quiz. Create and edit quizzes there too.
 2. Players open the main site (or scan the QR code), then enter the PIN and a nickname. The main page only lets people join games.
-3. **Start game.** Correct answers score up to 1000 points (faster earns more), plus up to 500 bonus points for an answer streak. A question closes when everyone online has answered, or when time runs out (plus a 1.5-second grace period for answers already on their way).
+3. **Start game.** Correct answers score up to 1000 points (faster earns more), plus up to 500 bonus points for an answer streak. Double-points questions score twice as much, and no-points questions don't count. A question closes when everyone online has answered, or when time runs out (plus a 1.5-second grace period for answers already on their way).
 
 ## Free plan limits
 
@@ -52,12 +52,18 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 {
   "title": "My quiz",
   "questions": [
-    { "text": "2 + 2 = ?", "options": ["3", "4", "5"], "correct": 1, "time": 20 }
+    { "type": "quiz", "text": "2 + 2 = ?", "options": ["3", "4", "5"], "correct": 1, "time": 20, "points": 1 },
+    { "type": "quiz", "text": "Which are even?", "options": ["2", "3", "4"], "correct": [0, 2], "multi": true, "time": 30, "points": 2 },
+    { "type": "tf", "text": "The Sun is a star.", "options": ["True", "False"], "correct": 0, "time": 10, "points": 0 }
   ]
 }
 ```
 
-`options` takes 2 to 4 answers, `correct` is the index of the right one, and `time` is 5, 10, 20, 30 or 60 seconds. Quizzes are saved in the host's browser. Use **Export** / **Import JSON** to back them up.
+- `type`: `"quiz"` (2 to 4 answers) or `"tf"` (true or false).
+- `correct`: the index of the right answer. For a multi-select question (`"multi": true`), a list of indexes. Players score only if they pick exactly those.
+- `time`: 5, 10, 15, 20, 30, 45, 60, 90, 120, 180 or 240 seconds.
+- `points`: `1` standard, `2` double points, `0` no points.
+- `image` (optional): a `data:image/...;base64,` picture shown on the host screen. The editor shrinks uploaded pictures for you. Quizzes are saved in the host's browser. Use **Export** / **Import JSON** to back them up.
 
 ## Credits
 

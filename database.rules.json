@@ -26,7 +26,7 @@
           "$qk": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid && !data.exists() && root.child('games/' + $pin + '/players/' + $uid).exists() && root.child('games/' + $pin + '/state/phase').val() === 'question' && root.child('games/' + $pin + '/state/qk').val() === $qk && now <= root.child('games/' + $pin + '/state/startAt').val() + root.child('games/' + $pin + '/state/time').val() * 1000 + 1500",
-              ".validate": "newData.hasChildren(['c', 'at']) && newData.child('c').isNumber() && newData.child('c').val() >= 0 && newData.child('c').val() <= 3 && newData.child('at').val() === now"
+              ".validate": "newData.hasChildren(['c', 'at']) && newData.child('c').isNumber() && newData.child('c').val() >= 0 && newData.child('c').val() <= 15 && newData.child('at').val() === now"
             }
           }
         }
