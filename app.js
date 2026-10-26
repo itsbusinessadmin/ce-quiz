@@ -138,10 +138,80 @@
   // Deletes stored files no saved quiz uses any more.
   async function pruneMedia() {
     try {
-      const used = new Set(getQuizzes().flatMap((q) => [q.cover, ...q.questions].map((x) => x && x.media && x.media.id)));
+      const sounds = getSounds();
+      const used = new Set(getQuizzes().flatMap((q) => [q.cover, ...q.questions].map((x) => x && x.media && x.media.id))
+        .concat(Object.keys(SOUND_SLOTS).map((k) => sounds[k] && sounds[k].id)));
       await Promise.all((await mediaDb.keys()).filter((k) => !used.has(k)).map(mediaDb.del));
     } catch { /* nothing to tidy, or storage blocked */ }
   }
+  // ---------- game sounds (host's screen only) ----------
+  // The admin uploads the music files; they live in this browser's IndexedDB
+  // and only the host's screen plays them (share computer sound in a meeting).
+  const STORE_SOUNDS = "pinquiz.sounds";
+  const SOUND_SLOTS = {
+    bg: { name: "Background music", hint: "Plays in the lobby, between questions and at the end. Pauses while a question is showing." },
+    question: { name: "Question music", hint: "Plays from the start while each question is showing." },
+    reveal: { name: "Answer reveal sound", hint: "Plays once when the answers are revealed, then the background music carries on." },
+  };
+  function getSounds() {
+    const v = load(STORE_SOUNDS, null) || {};
+    const out = { volume: typeof v.volume === "number" ? Math.min(1, Math.max(0, v.volume)) : 0.8, muted: !!v.muted };
+    Object.keys(SOUND_SLOTS).forEach((k) => { out[k] = validMedia(v[k]) ? v[k] : null; });
+    return out;
+  }
+  const setSounds = (v) => save(STORE_SOUNDS, v);
+
+  // Plays one "scene" at a time: bg, question, reveal, or quiet (a question
+  // with its own video or audio). onChange reports muted / blocked for the button.
+  function soundPlayer(onChange) {
+    const cfg = getSounds();
+    const els = {};
+    let scene = null, revealDone = false;
+    const state = { has: Object.keys(SOUND_SLOTS).some((k) => cfg[k]), muted: cfg.muted, blocked: false };
+    const wanted = () => {
+      if (cfg.muted) return null;
+      if (scene === "reveal") return revealDone || !els.reveal ? els.bg : els.reveal;
+      return els[scene] || null;
+    };
+    function apply(restart) {
+      const w = wanted();
+      Object.values(els).forEach((a) => {
+        if (a !== w) return a.pause();
+        if (restart) a.currentTime = 0;
+        if (a.paused) a.play().then(() => { if (state.blocked) { state.blocked = false; onChange(state); } }, () => { state.blocked = true; onChange(state); });
+      });
+    }
+    Promise.all(Object.keys(SOUND_SLOTS).map(async (k) => {
+      if (!cfg[k]) return;
+      const url = await loadMedia(cfg[k].id).ready;
+      if (!url) return;
+      const a = new Audio(url);
+      a.loop = k !== "reveal";
+      a.volume = cfg.volume;
+      if (k === "reveal") a.onended = () => { revealDone = true; apply(); };
+      els[k] = a;
+    })).then(() => apply(scene === "question" || scene === "reveal"));
+    return {
+      state,
+      scene(next) {
+        if (next === scene) return;
+        scene = next;
+        revealDone = false;
+        apply(next === "question" || next === "reveal");
+      },
+      // While the browser blocks autoplay, a click starts the sound; after that it mutes and unmutes.
+      click() {
+        if (!state.blocked) {
+          cfg.muted = state.muted = !cfg.muted;
+          setSounds(Object.assign(getSounds(), { muted: cfg.muted }));
+        }
+        apply();
+        onChange(state);
+      },
+      stop() { Object.values(els).forEach((a) => { a.pause(); a.removeAttribute("src"); }); },
+    };
+  }
+
   const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result);
@@ -306,6 +376,13 @@
           <div class="stack" id="customBox" style="gap:10px"></div>
         </div>
         <div class="card stack">
+          <span class="label">Game sounds</span>
+          <p class="muted" style="font-size:.9rem">Played on the host's screen. These are saved in this browser straight away and play when you host from it. In a Zoom, Meet or Teams call, turn on “share sound” when you share your screen.</p>
+          <div class="stack" id="soundBox" style="gap:10px"></div>
+          <div class="row"><label class="label" for="sVol">Volume</label><input type="range" id="sVol" min="0" max="100" style="flex:1;padding:0"></div>
+          <input type="file" id="sFile" accept="audio/*,video/mp4,.mp3,.m4a,.wav,.ogg" hidden>
+        </div>
+        <div class="card stack">
           <span class="label">Preview</span>
           <div class="preview" id="preview"></div>
         </div>
@@ -415,9 +492,65 @@
       toast("Settings saved");
       go(home);
     };
+    // Sounds are local to this browser, so they save as soon as they change.
+    let sounds = getSounds(), slot = "bg";
+    const preview = new Audio();
+    preview.onended = () => drawSounds();
+    function drawSounds() {
+      $("#soundBox").innerHTML = Object.keys(SOUND_SLOTS).map((k) => {
+        const f = sounds[k], playing = !preview.paused && preview.dataset.slot === k;
+        return `<div class="srow">
+          <div class="grow" style="min-width:0"><b>${SOUND_SLOTS[k].name}</b><small class="muted">${SOUND_SLOTS[k].hint}</small>
+            <span class="sfile">${f ? "♪ " + esc(f.name || "Sound") : '<span class="muted">No sound</span>'}</span></div>
+          <button class="small ghost" data-sprev="${k}" ${f ? "" : "disabled"}>${playing ? "■ Stop" : "▶ Play"}</button>
+          <button class="small ghost" data-sup="${k}">${f ? "Replace" : "Upload"}</button>
+          <button class="small danger" data-sdel="${k}" ${f ? "" : "disabled"}>Remove</button>
+        </div>`;
+      }).join("");
+      app.querySelectorAll("[data-sup]").forEach((b) => b.onclick = () => { slot = b.dataset.sup; $("#sFile").click(); });
+      app.querySelectorAll("[data-sdel]").forEach((b) => b.onclick = () => {
+        if (preview.dataset.slot === b.dataset.sdel) preview.pause();
+        sounds[b.dataset.sdel] = null;
+        setSounds(sounds);
+        pruneMedia();
+        drawSounds();
+      });
+      app.querySelectorAll("[data-sprev]").forEach((b) => b.onclick = async () => {
+        const k = b.dataset.sprev;
+        if (!preview.paused && preview.dataset.slot === k) { preview.pause(); return drawSounds(); }
+        const url = await loadMedia(sounds[k].id).ready;
+        if (!url) return toast("That sound is missing from this browser. Upload it again.");
+        preview.src = url;
+        preview.dataset.slot = k;
+        preview.volume = sounds.volume;
+        preview.play().catch(() => {});
+        drawSounds();
+      });
+    }
+    $("#sFile").onchange = async (e) => {
+      const f = e.target.files[0];
+      e.target.value = "";
+      if (!f) return;
+      const kind = mediaKind(f);
+      if (kind !== "audio" && kind !== "video") return toast("Use a sound file such as MP3, M4A or WAV.");
+      if (f.size > MAX_MEDIA_MB * 1024 * 1024) return toast(`That file is over ${MAX_MEDIA_MB} MB. Try a shorter one.`);
+      const id = uid();
+      try { await mediaDb.put(id, f); } catch { return toast("This browser is out of storage space for sounds."); }
+      sounds[slot] = { id, kind, name: f.name.slice(0, 80) };
+      setSounds(sounds);
+      pruneMedia();
+      drawSounds();
+      toast(SOUND_SLOTS[slot].name + " saved");
+    };
+    $("#sVol").value = Math.round(sounds.volume * 100);
+    $("#sVol").oninput = (e) => { sounds.volume = e.target.value / 100; preview.volume = sounds.volume; setSounds(sounds); };
+    const stopPaste = cleanup;
+    cleanup = () => { stopPaste(); preview.pause(); dropMediaUrls(); };
+
     drawLogo();
     drawIcons();
     drawPreview();
+    drawSounds();
   }
 
   function getQuizzes() {
@@ -1029,11 +1162,20 @@ ${ADMIN ? `          <div class="card stack">
     const fsKey = (e) => { if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) fsToggle(); };
     fsBtn.onclick = fsToggle;
     fsLabel();
+    const sndBtn = document.createElement("button");
+    sndBtn.className = "ghost small";
+    const sndLabel = (st) => {
+      sndBtn.textContent = st.blocked && !st.muted ? "Click for sound" : st.muted ? "Sound off" : "Sound on";
+      sndBtn.classList.toggle("attn", st.blocked && !st.muted);
+    };
+    const music = soundPlayer(sndLabel);
+    sndBtn.onclick = () => music.click();
+    sndLabel(music.state);
     document.addEventListener("fullscreenchange", fsLabel);
     document.addEventListener("keydown", fsKey);
     app.classList.add("stage");
     cleanup = () => {
-      dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls();
+      dead = true; clearInterval(tick); subs.forEach((f) => f()); music.stop(); dropMediaUrls();
       app.classList.remove("stage");
       document.removeEventListener("fullscreenchange", fsLabel);
       document.removeEventListener("keydown", fsKey);
@@ -1156,6 +1298,9 @@ ${ADMIN ? `          <div class="card stack">
       if (dead) return;
       const s = st(), list = rankOf(game.players, game.scores);
       clearInterval(tick);
+      // Question music stays quiet when the question plays its own video or audio.
+      const own = s.phase === "question" && srcs[s.q] && srcs[s.q].kind !== "image";
+      music.scene(s.phase === "question" ? (own ? "quiet" : "question") : s.phase === "reveal" ? "reveal" : "bg");
       if (s.phase === "lobby") {
         const url = joinUrl(pin);
         // Draw the lobby once; joins only refresh the participants list, so a GIF keeps playing.
@@ -1194,6 +1339,7 @@ ${ADMIN ? `          <div class="card stack">
           $("#start").onclick = () => startQuestion(0);
           $("#copy").onclick = () => navigator.clipboard.writeText(url).then(() => toast("Join link copied"), () => toast(url));
           $("#quit").onclick = endGame;
+          if (music.state.has) $(".sbar").appendChild(sndBtn);
           $(".sbar").appendChild(fsBtn);
         }
         const key = list.map((p) => p.uid + (game.presence[p.uid] ? 1 : 0)).join();
@@ -1282,7 +1428,10 @@ ${ADMIN ? `          <div class="card stack">
         $("#again").onclick = () => go(() => hostScreen(quiz));
         $("#home").onclick = () => go(home);
       }
-      if ($(".sbar")) $(".sbar").appendChild(fsBtn);
+      if ($(".sbar")) {
+        if (music.state.has) $(".sbar").appendChild(sndBtn);
+        $(".sbar").appendChild(fsBtn);
+      }
     }
     render();
   }
