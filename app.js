@@ -17,11 +17,13 @@
   ];
 
   const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const TYPES = { quiz: "Quiz", tf: "True or false" };
-  const TYPE_HINT = { quiz: "Up to 4 answers", tf: "Two answers" };
+  // A "slide" is a cover page between questions: a title and media, no answers.
+  const TYPES = { quiz: "Quiz", tf: "True or false", slide: "Cover slide" };
+  const TYPE_HINT = { quiz: "Up to 4 answers", tf: "Two answers", slide: "Title and picture, no answers" };
   const TYPE_ICON = {
     quiz: '<svg class="ticon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="9" height="9" rx="2" style="fill:var(--a0)"/><rect x="13" y="2" width="9" height="9" rx="2" style="fill:var(--a1)"/><rect x="2" y="13" width="9" height="9" rx="2" style="fill:var(--a2)"/><rect x="13" y="13" width="9" height="9" rx="2" style="fill:var(--a3)"/></svg>',
     tf: '<svg class="ticon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="9" height="20" rx="2" style="fill:var(--a0)"/><rect x="13" y="2" width="9" height="20" rx="2" style="fill:var(--a1)"/></svg>',
+    slide: '<svg class="ticon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2" style="fill:var(--a3)"/><circle cx="8" cy="9" r="2" style="fill:#fff"/><path d="M4 18l5-6 3 3 3-4 5 7z" style="fill:#fff"/></svg>',
   };
   const TIMES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
   const POINTS = [
@@ -34,19 +36,24 @@
     if (!m) return t + " seconds";
     return m + (m === 1 ? " minute" : " minutes") + (s ? " " + s + " seconds" : "");
   }
+  const isSlide = (q) => q.type === "slide";
+  const countQs = (qs) => qs.filter((x) => !isSlide(x)).length;
+  // "Question 3" counts questions only, skipping cover slides.
+  const qNumber = (qs, i) => countQs(qs.slice(0, i + 1));
   // Quizzes saved before multi-select store `correct` as one index.
   const corrects = (q) => [].concat(q.correct);
   const validImage = (s) => typeof s === "string" && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(s);
 
   function newQuestion(type) {
-    return { type, text: "", options: type === "tf" ? ["True", "False"] : ["", "", "", ""], correct: [0], time: 20, points: 1, multi: false, image: "", media: null };
+    const options = { tf: ["True", "False"], slide: [] }[type] || ["", "", "", ""];
+    return { type, text: "", options, correct: type === "slide" ? [] : [0], time: 20, points: 1, multi: false, image: "", media: null };
   }
   function editable(q) {
-    const type = q.type === "tf" ? "tf" : "quiz";
-    const options = q.options.slice();
+    const type = TYPES[q.type] ? q.type : "quiz";
+    const options = type === "slide" ? [] : q.options.slice();
     while (type === "quiz" && options.length < 4) options.push("");
     return {
-      type, text: q.text || "", options, correct: corrects(q).slice(),
+      type, text: q.text || "", options, correct: type === "slide" ? [] : corrects(q).slice(),
       time: TIMES.includes(q.time) ? q.time : 20,
       points: [0, 1, 2].includes(q.points) ? q.points : 1,
       multi: type === "quiz" && !!q.multi,
@@ -62,6 +69,7 @@
     };
   }
   function problem(x) {
+    if (isSlide(x)) return x.text.trim() || x.media || x.image ? "" : "Add a title or a picture.";
     if (!x.text.trim()) return "Add the question text.";
     if (x.options.filter((o) => o.trim()).length < 2) return "Add at least 2 answers.";
     if (!x.correct.some((c) => (x.options[c] || "").trim())) return "Mark a correct answer.";
@@ -199,9 +207,9 @@
 
   function validQuiz(q) {
     return q && typeof q.title === "string" && Array.isArray(q.questions) && q.questions.length > 0 &&
-      q.questions.every((x) => typeof x.text === "string" && Array.isArray(x.options) &&
+      q.questions.every((x) => typeof x.text === "string" && (isSlide(x) || Array.isArray(x.options) &&
         x.options.length >= 2 && x.options.length <= 4 && x.options.every((o) => typeof o === "string") &&
-        corrects(x).length > 0 && corrects(x).every((c) => Number.isInteger(c) && c >= 0 && c < x.options.length));
+        corrects(x).length > 0 && corrects(x).every((c) => Number.isInteger(c) && c >= 0 && c < x.options.length)));
   }
 
   let cleanup = null; // tears down the current screen's timers/connections
@@ -277,7 +285,7 @@ ${ADMIN ? `          <div class="card stack">
         ${list.length ? "" : `<p class="muted">No quizzes yet. Create one or import a JSON file.</p>`}
         <div class="quizlist">${list.map((q, i) => `
           <div class="card item">
-            <div class="grow" style="min-width:0"><h3>${esc(q.title)}</h3><p class="muted">${q.questions.length} questions</p></div>
+            <div class="grow" style="min-width:0"><h3>${esc(q.title)}</h3><p class="muted">${countQs(q.questions)} questions</p></div>
             <button class="small ghost" data-edit="${i}">Edit</button>
             <button class="small ghost" data-exp="${i}">Export</button>
             <button class="small danger" data-del="${i}">Delete</button>
@@ -330,7 +338,7 @@ ${ADMIN ? `          <div class="card stack">
         if (!q.cover.media) delete q.cover.media;
         q.questions = q.questions.map((x) => {
           const y = editable(x);
-          return Object.assign(y, { options: x.options.slice(), correct: y.multi ? y.correct : y.correct[0], image: y.image || undefined, media: y.media || undefined });
+          return Object.assign(y, { options: isSlide(y) ? [] : x.options.slice(), correct: isSlide(y) ? [] : y.multi ? y.correct : y.correct[0], image: y.image || undefined, media: y.media || undefined });
         });
         setQuizzes([...getQuizzes(), q]);
         toast("Imported " + q.title);
@@ -397,9 +405,9 @@ ${ADMIN ? `          <div class="card stack">
         <li class="slide${i === cur ? " on" : ""}${showProblems && problem(x) ? " bad" : ""}" draggable="true" data-i="${i}">
           <span class="num">${i + 1}</span>
           <button class="thumb" data-pick="${i}" ${i === cur ? 'aria-current="true"' : ""} title="${esc(showProblems ? problem(x) : "")}">
-            <span class="t-type"><span>${TYPES[x.type]}</span><span>${x.time}s</span></span>
-            <span class="t-text">${x.text.trim() ? esc(x.text) : '<span class="muted">No question yet</span>'}</span>
-            <span class="t-opts">${x.options.map((o, oi) => `<i class="c${oi}${x.correct.includes(oi) ? " ok" : ""}${o.trim() ? "" : " empty"}"></i>`).join("")}</span>
+            <span class="t-type"><span>${TYPES[x.type]}</span>${isSlide(x) ? "" : `<span>${x.time}s</span>`}</span>
+            <span class="t-text">${x.text.trim() ? esc(x.text) : `<span class="muted">${isSlide(x) ? "No title" : "No question yet"}</span>`}</span>
+            ${isSlide(x) ? slideThumb(x) : `<span class="t-opts">${x.options.map((o, oi) => `<i class="c${oi}${x.correct.includes(oi) ? " ok" : ""}${o.trim() ? "" : " empty"}"></i>`).join("")}</span>`}
           </button>
         </li>`).join("");
       app.querySelectorAll("[data-pick]").forEach((b) => b.onclick = () => select(+b.dataset.pick));
@@ -410,6 +418,16 @@ ${ADMIN ? `          <div class="card stack">
         li.ondrop = (e) => { e.preventDefault(); const from = dragFrom; dragFrom = null; move(from, +li.dataset.i); };
         li.ondragend = () => { dragFrom = null; };
       });
+    }
+
+    // A cover slide's rail card shows its picture, or the kind of media it has.
+    function slideThumb(x) {
+      if (x.image) return `<img class="t-img" src="${esc(x.image)}" alt="">`;
+      if (!x.media) return "";
+      if (x.media.kind !== "image") return `<span class="t-media">${x.media.kind}</span>`;
+      const e = loadMedia(x.media.id);
+      if (e.url === undefined) e.ready.then(drawSlides);
+      return e.url ? `<img class="t-img" src="${esc(e.url)}" alt="">` : "";
     }
 
     function drawAdder() {
@@ -469,10 +487,10 @@ ${ADMIN ? `          <div class="card stack">
         holder.image = "";
         touch();
         if (current() === holder) drawCanvas();
-        if (pictureOnly) drawSlides();
+        drawSlides();
       };
       ["#imgAdd", "#imgChange"].forEach((id) => { if ($(id)) $(id).onclick = () => file.click(); });
-      if ($("#imgDel")) $("#imgDel").onclick = () => { holder.image = ""; holder.media = null; touch(); drawCanvas(); if (pictureOnly) drawSlides(); };
+      if ($("#imgDel")) $("#imgDel").onclick = () => { holder.image = ""; holder.media = null; touch(); drawCanvas(); drawSlides(); };
       file.onchange = () => useFile(file.files[0]);
       pasteFile = useFile;
       media.ondragover = (e) => { if (dragFrom !== null) return; e.preventDefault(); media.classList.add("drag"); };
@@ -499,6 +517,16 @@ ${ADMIN ? `          <div class="card stack">
     function drawCanvas() {
       if (cur < 0) return drawCover();
       const x = q(), tf = x.type === "tf";
+      if (isSlide(x)) {
+        $("#canvas").innerHTML = `
+          <p class="label center" style="display:block">Cover slide · shown on the big screen between questions</p>
+          <textarea id="qtext" class="ed-q" rows="1" maxlength="160" placeholder="Slide title (optional)" aria-label="Slide title">${esc(x.text)}</textarea>
+          ${mediaBox(x)}
+          <p class="muted hint">Players see “Look at the screen” on their phones. No answers, no points.</p>`;
+        fitText($("#qtext"), (v) => { x.text = v; });
+        wireMedia(x);
+        return;
+      }
       $("#canvas").innerHTML = `
         <textarea id="qtext" class="ed-q" rows="1" maxlength="160" placeholder="Start typing your question" aria-label="Question text">${esc(x.text)}</textarea>
         ${mediaBox(x)}
@@ -549,12 +577,12 @@ ${ADMIN ? `          <div class="card stack">
         <label class="opt${off ? " off" : ""}"><input type="radio" name="${name}" value="${val}" ${on ? "checked" : ""} ${off ? "disabled" : ""}>
           <span><b>${title}</b><small>${hint}</small></span></label>`;
       $("#props").innerHTML = `
-        <div class="row"><h3>Question ${cur + 1}</h3><div class="spacer"></div><span class="muted">of ${n}</span></div>
+        <div class="row"><h3>${isSlide(x) ? "Cover slide" : "Question " + qNumber(quiz.questions, cur)}</h3><div class="spacer"></div><span class="muted">${cur + 1} of ${n}</span></div>
         <fieldset class="field"><legend class="label">Question type</legend>
           <div class="typegrid">${Object.keys(TYPES).map((t) => `
             <label class="opt typeopt"><input type="radio" name="ptype" value="${t}" ${x.type === t ? "checked" : ""}>${TYPE_ICON[t]}<b>${TYPES[t]}</b></label>`).join("")}</div>
         </fieldset>
-        <div class="field"><label class="label" for="ptime">Time limit</label>
+        ${isSlide(x) ? "" : `<div class="field"><label class="label" for="ptime">Time limit</label>
           <select id="ptime">${TIMES.map((t) => `<option value="${t}" ${x.time === t ? "selected" : ""}>${timeLabel(t)}</option>`).join("")}</select>
           <button class="linkbtn" id="timeAll">Use this time for every question</button>
         </div>
@@ -564,7 +592,7 @@ ${ADMIN ? `          <div class="card stack">
         <fieldset class="field"><legend class="label">Answer options</legend>
           ${opt("pmulti", 0, !x.multi, "Single select", "Players pick one answer.", tf)}
           ${opt("pmulti", 1, x.multi, "Multi-select", "Players can pick several answers, then submit.", tf)}
-        </fieldset>
+        </fieldset>`}
         <div class="props-foot">
           <button class="ghost small" id="up" ${cur === 0 ? "disabled" : ""} aria-label="Move question up" title="Move up">↑</button>
           <button class="ghost small" id="down" ${cur === n - 1 ? "disabled" : ""} aria-label="Move question down" title="Move down">↓</button>
@@ -573,13 +601,15 @@ ${ADMIN ? `          <div class="card stack">
         </div>`;
 
       app.querySelectorAll("[name=ptype]").forEach((el) => el.onchange = () => {
-        if (el.value === "tf") { x.keep = x.options; x.options = ["True", "False"]; x.multi = false; }
-        else { x.options = x.keep || ["", "", "", ""]; }
+        if (x.type === "quiz") x.keep = x.options; // restored if they switch back to Quiz
         x.type = el.value;
-        x.correct = [0];
+        x.options = { tf: ["True", "False"], slide: [] }[x.type] || x.keep || ["", "", "", ""];
+        x.correct = isSlide(x) ? [] : [0];
+        if (x.type !== "quiz") x.multi = false;
         touch();
         drawAll();
       });
+      if (isSlide(x)) return wireFoot();
       $("#ptime").onchange = (e) => { x.time = +e.target.value; touch(); drawSlides(); };
       $("#timeAll").onclick = () => {
         quiz.questions.forEach((y) => { y.time = x.time; });
@@ -596,6 +626,10 @@ ${ADMIN ? `          <div class="card stack">
         drawCanvas();
         drawSlides();
       });
+      wireFoot();
+    }
+    function wireFoot() {
+      const x = q();
       $("#up").onclick = () => move(cur, cur - 1);
       $("#down").onclick = () => move(cur, cur + 1);
       $("#dup").onclick = () => {
@@ -628,15 +662,22 @@ ${ADMIN ? `          <div class="card stack">
     function saveQuiz() {
       const title = quiz.title.trim();
       if (!title) { select(-1); $("#ctitle").focus(); return toast("Give the quiz a title."); }
+      if (!countQs(quiz.questions)) return toast("Add at least one question.");
       const bad = quiz.questions.findIndex(problem);
       if (bad >= 0) {
         showProblems = true;
         select(bad);
-        return toast(`Question ${bad + 1}: ${problem(quiz.questions[bad])}`);
+        return toast(`${isSlide(quiz.questions[bad]) ? "Cover slide" : "Question " + qNumber(quiz.questions, bad)}: ${problem(quiz.questions[bad])}`);
       }
       const cover = {};
       if (quiz.cover.media) cover.media = quiz.cover.media;
       const out = { id: quiz.id, title, cover, questions: quiz.questions.map((x) => {
+        if (isSlide(x)) {
+          const y = { type: "slide", text: x.text.trim(), options: [], correct: [], time: x.time, points: 0, multi: false };
+          if (x.media) y.media = x.media;
+          else if (x.image) y.image = x.image;
+          return y;
+        }
         // Keep slot order (colours stay put) but drop empty slots.
         const opts = x.options.map((o) => o.trim()), kept = [], at = [];
         opts.forEach((o, oi) => { if (o) { at[oi] = kept.length; kept.push(o); } });
@@ -682,7 +723,7 @@ ${ADMIN ? `          <div class="card stack">
         ${list.length ? "" : `<p class="muted">No quizzes yet. Create one first.</p>`}
         <div class="quizlist">${list.map((q, i) => `
           <div class="card item">
-            <div class="grow" style="min-width:0"><h3>${esc(q.title)}</h3><p class="muted">${q.questions.length} questions</p></div>
+            <div class="grow" style="min-width:0"><h3>${esc(q.title)}</h3><p class="muted">${countQs(q.questions)} questions</p></div>
             <button class="small" data-host="${i}">Host this</button>
           </div>`).join("")}</div>
         <button class="ghost" id="edit">Create and edit quizzes</button>
@@ -755,7 +796,24 @@ ${ADMIN ? `          <div class="card stack">
     let game = null, secret = null, lastBoard = [], revealing = false;
     const subs = [];
     let srcs = [], shown = null, coverSrc = null, peopleKey = null;
-    cleanup = () => { dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls(); app.classList.remove("full"); };
+    // The host screen is a 16:9 stage that fits the window without scrolling,
+    // so it reads well shared in Zoom, Google Meet or Teams.
+    const fsBtn = document.createElement("button");
+    fsBtn.className = "ghost small fsbtn";
+    const fsLabel = () => { fsBtn.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen"; };
+    const fsToggle = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+    const fsKey = (e) => { if (e.key.toLowerCase() === "f" && !e.ctrlKey && !e.metaKey && !e.altKey) fsToggle(); };
+    fsBtn.onclick = fsToggle;
+    fsLabel();
+    document.addEventListener("fullscreenchange", fsLabel);
+    document.addEventListener("keydown", fsKey);
+    app.classList.add("stage");
+    cleanup = () => {
+      dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls();
+      app.classList.remove("stage");
+      document.removeEventListener("fullscreenchange", fsLabel);
+      document.removeEventListener("keydown", fsKey);
+    };
     app.innerHTML = `<section class="stack center home"><h2>Setting up your game…</h2></section>`;
 
     try {
@@ -767,7 +825,7 @@ ${ADMIN ? `          <div class="card stack">
         quiz = { title: g.val().quiz.title, cover: { media: s.val().coverMedia || null }, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] },
           typeof media[i] === "string" ? { image: media[i] } : { media: media[i] || null })) };
       } else {
-        const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
+        const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ type: q.type || "quiz", text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
         for (let tries = 0; ; tries++) {
           pin = String(Math.floor(100000 + Math.random() * 900000));
           try {
@@ -802,6 +860,7 @@ ${ADMIN ? `          <div class="card stack">
     const answersNow = () => (st().qk && game.answers[st().qk]) || {};
 
     function startQuestion(i) {
+      if (isSlide(quiz.questions[i])) return gref.child("state").set({ phase: "slide", q: i, qk: "q" + i });
       gref.child("state").set({ phase: "question", q: i, qk: "q" + i, startAt: TS, time: quiz.questions[i].time });
     }
 
@@ -849,7 +908,7 @@ ${ADMIN ? `          <div class="card stack">
     // The scoreboard only comes after the last question, just before the winners.
     function next() {
       const s = st(), last = s.q + 1 >= quiz.questions.length;
-      if (s.phase === "reveal" && last) return gref.child("state/phase").set("board");
+      if ((s.phase === "reveal" || s.phase === "slide") && last) return gref.child("state/phase").set("board");
       if (!last) startQuestion(s.q + 1);
       else gref.child("state").set(Object.assign({}, s, { phase: "end" }));
     }
@@ -865,7 +924,7 @@ ${ADMIN ? `          <div class="card stack">
       if (!el || st().phase !== "question" || typeof st().startAt !== "number") return;
       const left = Math.max(0, endsAt() - now());
       el.style.setProperty("--p", (100 * left / (st().time * 1000)) + "%");
-      el.firstElementChild.textContent = Math.ceil(left / 1000);
+      el.firstElementChild.textContent = Math.min(st().time, Math.ceil(left / 1000));
     }
 
     let drawn = "";
@@ -879,11 +938,10 @@ ${ADMIN ? `          <div class="card stack">
         if (drawn !== "lobby") {
           drawn = "lobby";
           peopleKey = null;
-          app.classList.add("full");
           app.innerHTML = `
-            <section class="lobby">
-              <div class="row"><div class="brand small"><b>PinQuiz</b><span class="dot"></span></div><div class="spacer"></div>
-                <button class="ghost small" id="quit">End game</button><button id="start" disabled>Start game</button></div>
+            <section class="screen lobby">
+              <div class="sbar"><div class="brand small"><b>PinQuiz</b><span class="dot"></span></div><div class="spacer"></div>
+                <button class="ghost small" id="quit">End game</button><button class="small" id="start" disabled>Start game</button></div>
               <div class="lobby-grid">
                 <aside class="lob-card lob-join">
                   <h3>Join</h3>
@@ -891,6 +949,7 @@ ${ADMIN ? `          <div class="card stack">
                   <div class="stack" style="gap:0"><span>Game PIN</span><span class="pinval">${pin.slice(0, 3)} ${pin.slice(3)}</span></div>
                   <p>Join at <b class="joinurl">${esc(location.host + playerPath)}</b></p>
                   <button class="ghost small" id="copy">Copy join link</button>
+                  <p class="muted tip">In a Zoom, Meet or Teams call? Share this window and paste the join link in the chat.</p>
                 </aside>
                 <div class="lob-main">
                   <div class="lob-title">${esc(quiz.title)}</div>
@@ -911,6 +970,7 @@ ${ADMIN ? `          <div class="card stack">
           $("#start").onclick = () => startQuestion(0);
           $("#copy").onclick = () => navigator.clipboard.writeText(url).then(() => toast("Join link copied"), () => toast(url));
           $("#quit").onclick = endGame;
+          $(".sbar").appendChild(fsBtn);
         }
         const key = list.map((p) => p.uid + (game.presence[p.uid] ? 1 : 0)).join();
         if (key === peopleKey) return;
@@ -923,31 +983,33 @@ ${ADMIN ? `          <div class="card stack">
         return;
       }
       drawn = "";
-      app.classList.remove("full");
       const qq = q();
+      // The same media element is moved into each redraw so video and audio keep playing.
+      const placeMedia = () => {
+        if (!srcs[s.q] || !$("#qmedia")) return;
+        if (!shown || shown.q !== s.q) {
+          const box = document.createElement("div");
+          box.innerHTML = mediaTag(srcs[s.q], "autoplay");
+          shown = { q: s.q, el: box.firstElementChild };
+        }
+        $("#qmedia").appendChild(shown.el);
+      };
+      const label = isSlide(qq) ? "Cover slide" : `Question ${qNumber(quiz.questions, s.q)} of ${countQs(quiz.questions)}`;
+      const lastStep = s.q + 1 >= quiz.questions.length;
       if (s.phase === "question") {
         const n = Object.keys(answersNow()).length;
         app.innerHTML = `
-          <section class="stack" style="flex:1">
-            <div class="qhead">
-              <div class="timer" id="timer"><span>${qq.time}</span></div>
-              <div class="stack grow" style="gap:6px"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span>${badges(qq)}</div>
-              <div class="stack center stats" style="gap:0"><span class="big" style="font-size:2.4rem">${n}<span class="muted" style="font-size:1.2rem">/${online().length}</span></span><span class="label">answered</span></div>
-              <button class="ghost small" id="skip">Skip timer</button>
-            </div>
+          <section class="screen">
+            <div class="sbar"><span class="label">${label}</span>${badges(qq)}<div class="spacer"></div><button class="ghost small" id="skip">Skip timer</button></div>
             <div class="qtext">${esc(qq.text)}</div>
-            ${srcs[s.q] ? '<div class="qmedia" id="qmedia"></div>' : ""}
+            <div class="qmid">
+              <div class="timer" id="timer"><span>${qq.time}</span></div>
+              ${srcs[s.q] ? '<div class="qmedia" id="qmedia"></div>' : '<div class="grow"></div>'}
+              <div class="stats"><b>${n}<small>/${online().length}</small></b><span class="label">answered</span></div>
+            </div>
             <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i}">${SHAPES[i]}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
           </section>`;
-        // The same element is moved into each redraw so video and audio keep playing.
-        if (srcs[s.q]) {
-          if (!shown || shown.q !== s.q) {
-            const box = document.createElement("div");
-            box.innerHTML = mediaTag(srcs[s.q], "autoplay");
-            shown = { q: s.q, el: box.firstElementChild };
-          }
-          $("#qmedia").appendChild(shown.el);
-        }
+        placeMedia();
         drawTimer();
         tick = setInterval(() => { drawTimer(); maybeReveal(); }, 200);
         $("#skip").onclick = reveal;
@@ -955,19 +1017,28 @@ ${ADMIN ? `          <div class="card stack">
         const counts = s.counts || qq.options.map(() => 0);
         const max = Math.max(1, ...counts), right = corrects(s);
         app.innerHTML = `
-          <section class="stack" style="flex:1">
-            <div class="row"><span class="label">Question ${s.q + 1} of ${quiz.questions.length}</span><div class="spacer"></div><button id="next">${s.q + 1 >= quiz.questions.length ? "Show scoreboard" : "Next question"}</button></div>
+          <section class="screen">
+            <div class="sbar"><span class="label">${label}</span><div class="spacer"></div><button class="small" id="next">${lastStep ? "Show scoreboard" : "Next"}</button></div>
             <div class="qtext">${esc(qq.text)}</div>
             <div class="bars" style="grid-template-columns:repeat(${qq.options.length},1fr)">${counts.map((n, i) => `
               <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${right.includes(i) ? 1 : .35}"></div></div>`).join("")}</div>
             <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i} ${right.includes(i) ? "" : "dim"}">${SHAPES[i]}<span class="txt">${esc(o)}</span>${right.includes(i) ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
           </section>`;
         $("#next").onclick = next;
+      } else if (s.phase === "slide") {
+        app.innerHTML = `
+          <section class="screen">
+            <div class="sbar"><span class="label">${label}</span><div class="spacer"></div><button class="small" id="next">${lastStep ? "Show scoreboard" : "Next"}</button></div>
+            ${qq.text ? `<div class="qtext slide-title${srcs[s.q] ? "" : " alone"}">${esc(qq.text)}</div>` : ""}
+            ${srcs[s.q] ? '<div class="qmid"><div class="qmedia" id="qmedia"></div></div>' : ""}
+          </section>`;
+        placeMedia();
+        $("#next").onclick = next;
       } else if (s.phase === "board") {
         const last = s.q + 1 >= quiz.questions.length;
         app.innerHTML = `
-          <section class="stack narrow" style="max-width:720px;flex:1">
-            <div class="row"><h2>Scoreboard</h2><div class="spacer"></div><button id="next">${last ? "Show winners" : "Next question"}</button></div>
+          <section class="screen">
+            <div class="sbar"><h2>Scoreboard</h2><div class="spacer"></div><button class="small" id="next">${last ? "Show winners" : "Next question"}</button></div>
             <div class="board">${list.slice(0, 5).map((p, i) => {
               const was = lastBoard.indexOf(p.uid);
               const moved = was > i ? ' <span style="color:var(--good)">▲</span>' : "";
@@ -980,14 +1051,14 @@ ${ADMIN ? `          <div class="card stack">
         const [a, b, c] = list;
         const step = (p, cls, place) => `<div class="step ${cls}"><span class="label" style="${cls === "p1" ? "color:var(--ink)" : ""}">${place}</span><b>${p ? esc(p.nick) : "—"}</b><span>${p ? p.score : ""}</span></div>`;
         app.innerHTML = `
-          <section class="stack center" style="flex:1;justify-content:center">
-            <h1>Winners</h1>
+          <section class="screen">
+            <div class="sbar"><h2>Winners</h2><div class="spacer"></div><button class="ghost small" id="home">Home</button><button class="small" id="again">Play again</button></div>
             <div class="podium">${step(b, "p2", "2nd")}${step(a, "p1", "1st")}${step(c, "p3", "3rd")}</div>
-            <div class="row center"><button id="again">Play again</button><button class="ghost" id="home">Home</button></div>
           </section>`;
         $("#again").onclick = () => go(() => hostScreen(quiz));
         $("#home").onclick = () => go(home);
       }
+      if ($(".sbar")) $(".sbar").appendChild(fsBtn);
     }
     render();
   }
@@ -1055,8 +1126,9 @@ ${ADMIN ? `          <div class="card stack">
     }
 
     function header(s, you) {
-      const total = game.quiz ? game.quiz.questions.length : 0;
-      return `<div class="row"><b>${esc(nick)}</b><div class="spacer"></div>${s.phase !== "lobby" && total ? `<span class="label">Q ${s.q + 1}/${total}</span>` : ""}<span class="label" style="color:var(--fg)">${you ? you.score : 0} pts</span></div>`;
+      const qs = game.quiz ? game.quiz.questions : [];
+      const show = s.phase !== "lobby" && qs[s.q] && !isSlide(qs[s.q]);
+      return `<div class="row"><b>${esc(nick)}</b><div class="spacer"></div>${show ? `<span class="label">Q ${qNumber(qs, s.q)}/${countQs(qs)}</span>` : ""}<span class="label" style="color:var(--fg)">${you ? you.score : 0} pts</span></div>`;
     }
 
     function render() {
@@ -1097,6 +1169,12 @@ ${ADMIN ? `          <div class="card stack">
           if (q.multi) $("#submit").onclick = () => answer(sel.reduce((m, i) => m | (1 << i), 0));
           tick = setInterval(() => { const el = $("#left"); if (el) el.textContent = `${left()}s left · ${n} answered`; }, 250);
         }
+      } else if (s.phase === "slide" || (s.phase === "board" && isSlide(game.quiz.questions[s.q]))) {
+        const q = game.quiz.questions[s.q];
+        app.innerHTML = `${header(s, you)}<section class="stack center home">
+          <span class="label">${s.phase === "slide" ? "Look at the screen" : "Scores are in"}</span>
+          ${s.phase === "slide" && q.text ? `<h2>${esc(q.text)}</h2>` : ""}
+          ${qNumber(game.quiz.questions, s.q) ? `<p class="muted">You're ${ordinal(rank)} of ${order.length} with ${you ? you.score : 0} points.</p>` : ""}</section>`;
       } else if (s.phase === "reveal" || s.phase === "board") {
         const q = game.quiz.questions[s.q];
         const l = mine.last && mine.last.q === s.q ? mine.last : { correct: false, gained: 0, answered: false };
