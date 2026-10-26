@@ -198,6 +198,228 @@
     return location.origin + playerPath + "?pin=" + pin;
   }
 
+  // ---------- branding (admin settings) ----------
+  // The name, logo and answer icons live in Firebase at /settings so players'
+  // phones match the admin's choices. A cached copy shows straight away.
+  const STORE_BRAND = "pinquiz.brand";
+  const ICON_SETS = { shapes: "Shapes", letters: "Letters", numbers: "Numbers", custom: "Custom" };
+  const GLYPHS = { letters: ["A", "B", "C", "D"], numbers: ["1", "2", "3", "4"] };
+  function cleanBrand(v) {
+    v = v || {};
+    const custom = [0, 1, 2, 3].map((i) => {
+      const c = Array.isArray(v.custom) ? v.custom[i] : "";
+      return validImage(c) ? c : typeof c === "string" ? c.trim().slice(0, 8) : "";
+    });
+    return {
+      name: typeof v.name === "string" && v.name.trim() ? v.name.trim().slice(0, 24) : "PinQuiz",
+      logo: validImage(v.logo) ? v.logo : "",
+      showName: v.showName !== false,
+      icons: ICON_SETS[v.icons] ? v.icons : "shapes",
+      custom,
+    };
+  }
+  let brand = cleanBrand(load(STORE_BRAND, null));
+
+  // The mark on answer button i: a shape, a letter or number, or a custom emoji or picture.
+  function choiceIcon(i, b = brand) {
+    if (GLYPHS[b.icons]) return `<span class="shape glyph" aria-hidden="true"><b>${GLYPHS[b.icons][i]}</b></span>`;
+    const c = b.icons === "custom" ? b.custom[i] : "";
+    if (validImage(c)) return `<span class="shape glyph" aria-hidden="true"><img src="${esc(c)}" alt=""></span>`;
+    if (c) return `<span class="shape glyph" aria-hidden="true"><b>${esc(c)}</b></span>`;
+    return SHAPES[i];
+  }
+  function brandInner(b = brand) {
+    const logo = b.logo ? `<img class="brand-logo" src="${esc(b.logo)}" alt="${b.showName ? "" : esc(b.name)}">` : "";
+    const name = !b.logo || b.showName ? `<span class="brand-name">${esc(b.name)}</span>${b.logo ? "" : '<span class="dot"></span>'}` : "";
+    return logo + name;
+  }
+  const defaultIcon = (document.querySelector("link[rel=icon]") || {}).href;
+  function applyBrand() {
+    document.querySelectorAll("[data-brand]").forEach((el) => { el.innerHTML = brandInner(); });
+    document.title = brand.name + (ADMIN ? " Admin" : "");
+    const icon = document.querySelector("link[rel=icon]");
+    if (icon) icon.href = brand.logo || defaultIcon;
+  }
+  function setBrand(v) {
+    brand = cleanBrand(v);
+    save(STORE_BRAND, brand);
+    applyBrand();
+  }
+  async function loadBrand() {
+    if (!firebaseReady()) return;
+    try { setBrand((await initFirebase().db.ref("settings").get()).val()); } catch { /* keep the cached look */ }
+  }
+  // Logos and icon pictures are stored as small PNG data URLs (GIFs as they are).
+  async function smallPicture(file, max, limitKb) {
+    if (mediaKind(file) !== "image") throw new Error("Use a picture or GIF.");
+    if (file.type === "image/gif" || /\.gif$/i.test(file.name)) {
+      if (file.size > limitKb * 1024) throw new Error(`That GIF is over ${limitKb} KB. Try a smaller one.`);
+      return blobToDataUrl(file);
+    }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+      const k = Math.min(1, max / img.width, max / img.height);
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * k));
+      c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      let out = c.toDataURL("image/png");
+      if (out.length > limitKb * 1024 * 1.37) out = c.toDataURL("image/webp", 0.85);
+      if (out.length > limitKb * 1024 * 1.37) throw new Error("That picture is too detailed. Try a simpler one.");
+      return out;
+    } catch (e) {
+      throw new Error(e && e.message ? e.message : "That picture couldn't be opened.");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function settingsScreen() {
+    const draft = JSON.parse(JSON.stringify(brand));
+    let dirty = false;
+    app.innerHTML = `
+      <section class="stack narrow settings" style="max-width:760px">
+        <div class="row"><button class="ghost small" id="back">← Back</button><div class="spacer"></div><button class="small" id="saveSet">Save settings</button></div>
+        <h2>Settings</h2>
+        <p class="muted">These change what everyone sees: this admin page, the big screen and players' phones.</p>
+        <div class="card stack">
+          <label class="label" for="sName">Name</label>
+          <input id="sName" maxlength="24" value="${esc(draft.name)}" placeholder="PinQuiz">
+        </div>
+        <div class="card stack">
+          <span class="label">Logo</span>
+          <div class="logo-row">
+            <div class="logo-box" id="logoBox"></div>
+            <div class="stack" style="gap:10px">
+              <div class="row"><button class="small ghost" id="logoUp">Upload logo</button><button class="small danger" id="logoDel">Remove</button></div>
+              <p class="muted" style="font-size:.9rem">Or drop or paste a picture here. PNG with a transparent background works best.</p>
+              <label class="check"><input type="checkbox" id="sShow"> Show the name next to the logo</label>
+            </div>
+          </div>
+          <input type="file" id="logoFile" accept="image/*" hidden>
+        </div>
+        <div class="card stack">
+          <span class="label">Answer icons</span>
+          <p class="muted" style="font-size:.9rem">The marks on the answer buttons, on the big screen and on players' phones.</p>
+          <div class="iconsets" id="iconSets"></div>
+          <div class="stack" id="customBox" style="gap:10px"></div>
+        </div>
+        <div class="card stack">
+          <span class="label">Preview</span>
+          <div class="preview" id="preview"></div>
+        </div>
+        <button class="ghost small" id="resetSet" style="align-self:flex-start">Reset to default</button>
+      </section>`;
+
+    function drawLogo() {
+      $("#logoBox").innerHTML = draft.logo ? `<img src="${esc(draft.logo)}" alt="Logo">` : '<span class="muted">No logo</span>';
+      $("#logoDel").disabled = !draft.logo;
+      $("#sShow").checked = draft.showName;
+      $("#sShow").disabled = !draft.logo;
+    }
+    function drawIcons() {
+      $("#iconSets").innerHTML = Object.keys(ICON_SETS).map((k) => `
+        <label class="opt iconset"><input type="radio" name="iset" value="${k}" ${draft.icons === k ? "checked" : ""}>
+          <b>${ICON_SETS[k]}</b><span class="mini">${[0, 1, 2, 3].map((i) => `<i class="c${i}">${choiceIcon(i, Object.assign({}, draft, { icons: k }))}</i>`).join("")}</span></label>`).join("");
+      app.querySelectorAll("[name=iset]").forEach((el) => el.onchange = () => { draft.icons = el.value; dirty = true; drawIcons(); drawPreview(); });
+      const custom = draft.icons === "custom";
+      $("#customBox").innerHTML = !custom ? "" : `
+        <p class="muted" style="font-size:.9rem">Type an emoji or up to 2 letters, or upload a small picture, for each answer. Empty ones use the shape.</p>
+        ${[0, 1, 2, 3].map((i) => `
+          <div class="crow">
+            <span class="cswatch c${i}">${choiceIcon(i, draft)}</span>
+            <input data-ctext="${i}" maxlength="8" placeholder="e.g. ☕" value="${esc(validImage(draft.custom[i]) ? "" : draft.custom[i])}" aria-label="Icon for answer ${i + 1}">
+            <button class="small ghost" data-cup="${i}">Picture</button>
+            <button class="small danger" data-cdel="${i}" ${draft.custom[i] ? "" : "disabled"}>Clear</button>
+          </div>`).join("")}
+        <input type="file" id="cFile" accept="image/*" hidden>`;
+      if (!custom) return;
+      let target = 0;
+      app.querySelectorAll("[data-ctext]").forEach((el) => el.oninput = () => {
+        const i = +el.dataset.ctext;
+        draft.custom[i] = el.value.trim();
+        dirty = true;
+        el.parentElement.querySelector(".cswatch").innerHTML = choiceIcon(i, draft);
+        el.parentElement.querySelector("[data-cdel]").disabled = !draft.custom[i];
+        drawPreview();
+      });
+      app.querySelectorAll("[data-cup]").forEach((b) => b.onclick = () => { target = +b.dataset.cup; $("#cFile").click(); });
+      app.querySelectorAll("[data-cdel]").forEach((b) => b.onclick = () => { draft.custom[+b.dataset.cdel] = ""; dirty = true; drawIcons(); drawPreview(); });
+      $("#cFile").onchange = async (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        try { draft.custom[target] = await smallPicture(f, 128, 60); } catch (err) { return toast(err.message); }
+        dirty = true;
+        drawIcons();
+        drawPreview();
+      };
+    }
+    function drawPreview() {
+      const look = cleanBrand(draft);
+      $("#preview").innerHTML = `
+        <div class="brand small">${brandInner(look)}</div>
+        <div class="pad mini-pad">${["Answer 1", "Answer 2", "Answer 3", "Answer 4"].map((o, i) => `<button class="c${i}" tabindex="-1">${choiceIcon(i, look)}<span>${o}</span></button>`).join("")}</div>`;
+    }
+    async function useLogo(f) {
+      if (!f) return;
+      try { draft.logo = await smallPicture(f, 400, 300); } catch (err) { return toast(err.message); }
+      dirty = true;
+      drawLogo();
+      drawPreview();
+    }
+
+    $("#sName").oninput = (e) => { draft.name = e.target.value; dirty = true; drawPreview(); };
+    $("#logoUp").onclick = () => $("#logoFile").click();
+    $("#logoFile").onchange = (e) => useLogo(e.target.files[0]);
+    $("#logoDel").onclick = () => { draft.logo = ""; dirty = true; drawLogo(); drawPreview(); };
+    $("#sShow").onchange = (e) => { draft.showName = e.target.checked; dirty = true; drawPreview(); };
+    const box = $("#logoBox");
+    box.ondragover = (e) => { e.preventDefault(); box.classList.add("drag"); };
+    box.ondragleave = () => box.classList.remove("drag");
+    box.ondrop = (e) => { e.preventDefault(); box.classList.remove("drag"); useLogo(e.dataTransfer.files[0]); };
+    const paste = (e) => {
+      const item = [...((e.clipboardData && e.clipboardData.items) || [])].find((i) => i.kind === "file");
+      if (!item) return;
+      e.preventDefault();
+      useLogo(item.getAsFile());
+    };
+    document.addEventListener("paste", paste);
+    cleanup = () => document.removeEventListener("paste", paste);
+    $("#resetSet").onclick = () => {
+      Object.assign(draft, cleanBrand({}));
+      $("#sName").value = draft.name;
+      dirty = true;
+      drawLogo();
+      drawIcons();
+      drawPreview();
+    };
+    $("#back").onclick = (e) => {
+      const b = e.currentTarget;
+      if (dirty && !b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Discard changes?"; return; }
+      go(home);
+    };
+    $("#saveSet").onclick = async () => {
+      if (!firebaseReady()) return toast("Set up Firebase first (see the README).");
+      const out = cleanBrand(draft);
+      try {
+        const { db, signedIn } = initFirebase();
+        const owner = (await signedIn).uid;
+        await db.ref("settings").set(Object.assign({}, out, { ownerUid: owner }));
+      } catch (err) {
+        const denied = String((err && (err.code || err.message)) || "").toLowerCase().includes("permission");
+        return toast(denied ? "Couldn't save. Settings can only be changed from the browser that first saved them, and the database rules must be up to date (see the README)." : fbError(err));
+      }
+      setBrand(out);
+      dirty = false;
+      toast("Settings saved");
+      go(home);
+    };
+    drawLogo();
+    drawIcons();
+    drawPreview();
+  }
+
   function getQuizzes() {
     const list = load(STORE_QUIZZES, []);
     // drop the old built-in example that earlier versions saved to the browser
@@ -224,7 +446,7 @@
     app.innerHTML = `
       <section class="stack home">
         <div class="stack center">
-          <div class="brand"><h1>PinQuiz</h1><span class="dot"></span></div>
+          <div class="brand" data-brand>${brandInner()}</div>
           <p class="muted">${ADMIN ? "Admin: host games and manage your quizzes." : "Live quiz games for a room full of phones. Free, no accounts."}</p>
         </div>
         <div class="row center" id="resume"></div>
@@ -233,6 +455,7 @@ ${ADMIN ? `          <div class="card stack">
             <h2>Host a game</h2>
             <button id="hostBtn">Host a game</button>
             <button class="ghost" id="editBtn">Create and edit quizzes</button>
+            <button class="ghost" id="setBtn">Settings</button>
           </div>` : `          <form class="card stack" id="joinForm">
             <h2>Join a game</h2>
             <label class="label" for="pinIn">Game PIN</label>
@@ -251,6 +474,7 @@ ${ADMIN ? `          <div class="card stack">
       }
       $("#hostBtn").addEventListener("click", () => go(pickQuiz));
       $("#editBtn").addEventListener("click", () => go(quizList));
+      $("#setBtn").addEventListener("click", () => go(settingsScreen));
       return;
     }
     const params = new URLSearchParams(location.search);
@@ -533,7 +757,7 @@ ${ADMIN ? `          <div class="card stack">
         <div class="ed-answers">${x.options.map((o, oi) => {
           const ok = x.correct.includes(oi);
           return `<div class="tile c${oi}${ok ? " ok" : ""}${tf || o.trim() ? " filled" : ""}">
-            <span class="tile-shape">${SHAPES[oi]}</span>
+            <span class="tile-shape">${choiceIcon(oi)}</span>
             ${tf ? `<span class="tile-fixed">${esc(o)}</span>` : `<input data-opt="${oi}" maxlength="80" placeholder="Add answer ${oi + 1}${oi > 1 ? " (optional)" : ""}" value="${esc(o)}" aria-label="Answer ${oi + 1}">`}
             <button class="mark${x.multi ? " multi" : ""}" data-mark="${oi}" aria-pressed="${ok}" aria-label="Answer ${oi + 1} is correct" title="${ok ? "Correct answer" : "Mark as correct"}">${CHECK}</button>
           </div>`;
@@ -940,7 +1164,7 @@ ${ADMIN ? `          <div class="card stack">
           peopleKey = null;
           app.innerHTML = `
             <section class="screen lobby">
-              <div class="sbar"><div class="brand small"><b>PinQuiz</b><span class="dot"></span></div><div class="spacer"></div>
+              <div class="sbar"><div class="brand small" data-brand>${brandInner()}</div><div class="spacer"></div>
                 <button class="ghost small" id="quit">End game</button><button class="small" id="start" disabled>Start game</button></div>
               <div class="lobby-grid">
                 <aside class="lob-card lob-join">
@@ -1007,7 +1231,7 @@ ${ADMIN ? `          <div class="card stack">
               ${srcs[s.q] ? '<div class="qmedia" id="qmedia"></div>' : '<div class="grow"></div>'}
               <div class="stats"><b>${n}<small>/${online().length}</small></b><span class="label">answered</span></div>
             </div>
-            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i}">${SHAPES[i]}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
+            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i}">${choiceIcon(i)}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
           </section>`;
         placeMedia();
         drawTimer();
@@ -1022,7 +1246,7 @@ ${ADMIN ? `          <div class="card stack">
             <div class="qtext">${esc(qq.text)}</div>
             <div class="bars" style="grid-template-columns:repeat(${qq.options.length},1fr)">${counts.map((n, i) => `
               <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${right.includes(i) ? 1 : .35}"></div></div>`).join("")}</div>
-            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i} ${right.includes(i) ? "" : "dim"}">${SHAPES[i]}<span class="txt">${esc(o)}</span>${right.includes(i) ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
+            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i} ${right.includes(i) ? "" : "dim"}">${choiceIcon(i)}<span class="txt">${esc(o)}</span>${right.includes(i) ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
           </section>`;
         $("#next").onclick = next;
       } else if (s.phase === "slide") {
@@ -1158,7 +1382,7 @@ ${ADMIN ? `          <div class="card stack">
           app.innerHTML = `${header(s, you)}
             <div class="stack" style="gap:6px;margin-block:12px"><p style="font-weight:700;font-size:1.15rem">${esc(q.text)}</p>
               <div class="row" style="gap:8px">${badges(q)}<span class="muted" id="left" style="font-size:.9rem">${left()}s left · ${n} answered</span></div></div>
-            <div class="pad" style="${q.options.length === 2 ? "grid-template-columns:1fr" : ""}">${q.options.map((o, i) => `<button class="c${i}${sel.includes(i) ? " on" : ""}" data-c="${i}" aria-label="${esc(o)}"${q.multi ? ` aria-pressed="${sel.includes(i)}"` : ""}>${SHAPES[i]}<span>${esc(o)}</span></button>`).join("")}</div>
+            <div class="pad" style="${q.options.length === 2 ? "grid-template-columns:1fr" : ""}">${q.options.map((o, i) => `<button class="c${i}${sel.includes(i) ? " on" : ""}" data-c="${i}" aria-label="${esc(o)}"${q.multi ? ` aria-pressed="${sel.includes(i)}"` : ""}>${choiceIcon(i)}<span>${esc(o)}</span></button>`).join("")}</div>
             ${q.multi ? `<button id="submit" style="margin-top:12px" ${sel.length ? "" : "disabled"}>Submit ${sel.length ? sel.length + (sel.length === 1 ? " answer" : " answers") : ""}</button>` : ""}`;
           app.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => {
             const c = +b.dataset.c;
@@ -1214,5 +1438,7 @@ ${ADMIN ? `          <div class="card stack">
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
 
+  applyBrand();
   home();
+  loadBrand();
 })();

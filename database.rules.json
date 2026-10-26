@@ -32,6 +32,17 @@
         }
       }
     },
+    "settings": {
+      ".read": true,
+      ".write": "auth != null && newData.child('ownerUid').val() === auth.uid && (!data.exists() || data.child('ownerUid').val() === auth.uid)",
+      "ownerUid": { ".validate": "newData.isString()" },
+      "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
+      "logo": { ".validate": "newData.isString() && newData.val().length < 600000" },
+      "showName": { ".validate": "newData.isBoolean()" },
+      "icons": { ".validate": "newData.isString() && newData.val().matches(/^(shapes|letters|numbers|custom)$/)" },
+      "custom": { "$i": { ".validate": "$i.matches(/^[0-3]$/) && newData.isString() && newData.val().length < 120000" } },
+      "$other": { ".validate": false }
+    },
     "secrets": {
       "$pin": {
         ".read": "auth != null && root.child('games/' + $pin + '/hostUid').val() === auth.uid",

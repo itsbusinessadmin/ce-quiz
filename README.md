@@ -41,6 +41,13 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 2. Players open the main site (or scan the QR code), then enter the PIN and a nickname. The main page only lets people join games.
 3. **Start game.** Correct answers score up to 1000 points (faster earns more), plus up to 500 bonus points for an answer streak. Double-points questions score twice as much, and no-points questions don't count. A question closes when everyone online has answered, or when time runs out (plus a 1.5-second grace period for answers already on their way).
 
+## Settings: name, logo and answer icons
+
+On the admin page, **Settings** changes the game's name, adds a logo, and picks the marks on the answer buttons (shapes, letters, numbers, or your own emoji or pictures). Everyone sees the change: the admin page, the big screen and players' phones.
+
+- After updating to this version, paste the new `database.rules.json` into the Realtime Database **Rules** tab and click **Publish**, or settings won't save.
+- Settings can only be changed from the browser that saved them first. To hand them to another browser, delete the `settings` entry in the Realtime Database **Data** tab, then save from the new browser.
+
 ## Free plan limits
 
 - **100 devices connected at the same time**, across all games together.
