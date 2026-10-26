@@ -214,10 +214,10 @@ button.typebtn:hover { box-shadow: inset 0 0 0 2px var(--spot); }
 textarea.ed-q { background: var(--fg); color: var(--ink); border: 0; border-radius: 16px; padding: 20px; text-align: center; font: 800 clamp(1.25rem, 2.6vw, 1.9rem)/1.25 var(--display); resize: none; box-shadow: 0 4px 0 rgba(0,0,0,.3); }
 textarea.ed-q::placeholder { color: #7f9298; }
 textarea.ed-q:focus { box-shadow: 0 4px 0 rgba(0,0,0,.3), 0 0 0 3px var(--spot); }
-.media { display: grid; place-items: center; text-align: center; position: relative; align-self: center; width: min(100%, 520px); aspect-ratio: 16 / 9; border-radius: 16px; border: 2px dashed var(--line); background: rgba(255,255,255,.03); overflow: hidden; }
+.media { display: grid; place-items: center; text-align: center; position: relative; align-self: center; flex: none; width: min(100%, 600px); aspect-ratio: 3 / 2; border-radius: 16px; border: 2px dashed var(--line); background: rgba(255,255,255,.03); overflow: hidden; }
 .media:has(img) { border-style: solid; }
 .media.drag { border-color: var(--spot); background: rgba(255,207,63,.08); }
-.media img, .media video { width: 100%; height: 100%; object-fit: contain; display: block; background: var(--ink); }
+.media img, .media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: var(--ink); }
 .media > .muted { padding: 16px; }
 .audio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; overflow-wrap: anywhere; }
 .audio .note { width: 64px; height: 64px; border-radius: 50%; background: var(--spot); color: var(--ink); display: grid; place-items: center; font-size: 2rem; }
