@@ -246,9 +246,10 @@
     save(STORE_BRAND, brand);
     applyBrand();
   }
-  async function loadBrand() {
+  // Follows /settings live, so a change saved on any device shows everywhere at once.
+  function loadBrand() {
     if (!firebaseReady()) return;
-    try { setBrand((await initFirebase().db.ref("settings").get()).val()); } catch { /* keep the cached look */ }
+    try { initFirebase().db.ref("settings").on("value", (snap) => setBrand(snap.val()), () => { /* keep the cached look */ }); } catch { /* keep the cached look */ }
   }
   // Logos and icon pictures are stored as small PNG data URLs (GIFs as they are).
   async function smallPicture(file, max, limitKb) {
@@ -276,14 +277,78 @@
     }
   }
 
-  function settingsScreen() {
+  // Settings need the admin account, which works on any device. The first
+  // email/password account to sign in becomes the admin (see the README).
+  async function settingsScreen() {
+    if (!firebaseReady()) return setupNeeded();
+    app.innerHTML = `<section class="stack center home"><h2>Loading settings…</h2></section>`;
+    let user;
+    try { user = await initFirebase().signedIn; } catch (e) { return errorScreen("Couldn't load settings", fbError(e), settingsScreen); }
+    if (user.isAnonymous) return adminLogin();
+    const { db } = initFirebase();
+    try {
+      const admins = (await db.ref("admins").get()).val();
+      if (!admins) await db.ref("admins/" + user.uid).set(true);
+      else if (admins[user.uid] !== true) return adminLogin(`${user.email} isn't the admin account for this game.`);
+    } catch (e) {
+      return errorScreen("Couldn't check the admin account", "Make sure the database rules are up to date (see the README). " + fbError(e), settingsScreen);
+    }
+    settingsEditor(user);
+  }
+
+  function adminLogin(problem) {
+    app.innerHTML = `
+      <section class="stack narrow" style="max-width:480px">
+        <div class="row"><button class="ghost small" id="back">← Back</button></div>
+        <form class="card stack" id="loginForm">
+          <h2>Admin sign-in</h2>
+          <p class="muted">Sign in to change settings. The same account works on your laptop, phone or any other device, and changes sync to all of them.</p>
+          ${problem ? `<p class="bad-note">${esc(problem)}</p>` : ""}
+          <label class="label" for="lEmail">Email</label>
+          <input id="lEmail" type="email" autocomplete="username" required>
+          <label class="label" for="lPass">Password</label>
+          <input id="lPass" type="password" autocomplete="current-password" required>
+          <button type="submit" id="lGo">Sign in</button>
+        </form>
+        <details class="card help">
+          <summary>First time? Create the admin account</summary>
+          <ol>
+            <li>In the Firebase console, open <b>Authentication → Sign-in method</b>, click <b>Add new provider → Email/Password</b>, turn it on and save.</li>
+            <li>Open the <b>Users</b> tab, click <b>Add user</b>, and enter your email and a password.</li>
+            <li>Sign in here with them. The first account that signs in becomes the admin.</li>
+          </ol>
+        </details>
+      </section>`;
+    $("#back").onclick = () => go(home);
+    $("#lEmail").focus();
+    $("#loginForm").onsubmit = async (e) => {
+      e.preventDefault();
+      $("#lGo").disabled = true;
+      try {
+        const { auth } = initFirebase();
+        if (auth.currentUser && !auth.currentUser.isAnonymous) await auth.signOut();
+        await auth.signInWithEmailAndPassword($("#lEmail").value.trim(), $("#lPass").value);
+      } catch (err) {
+        $("#lGo").disabled = false;
+        const code = (err && err.code) || "";
+        if (code.includes("operation-not-allowed")) return toast("Email/Password sign-in is turned off. Turn it on in Firebase (see “First time?” below).");
+        if (code.includes("too-many-requests")) return toast("Too many tries. Wait a few minutes and try again.");
+        if (code.includes("invalid") || code.includes("wrong-password") || code.includes("user-not-found")) return toast("Wrong email or password.");
+        return toast(fbError(err));
+      }
+      go(settingsScreen);
+    };
+  }
+
+  function settingsEditor(user) {
     const draft = JSON.parse(JSON.stringify(brand));
     let dirty = false;
     app.innerHTML = `
       <section class="stack narrow settings" style="max-width:760px">
         <div class="row"><button class="ghost small" id="back">← Back</button><div class="spacer"></div><button class="small" id="saveSet">Save settings</button></div>
         <h2>Settings</h2>
-        <p class="muted">These change what everyone sees: this admin page, the big screen and players' phones.</p>
+        <p class="muted">These change what everyone sees: this admin page, the big screen and players' phones. Saved changes sync to every device straight away.</p>
+        <p class="muted" style="font-size:.9rem">Signed in as <b>${esc(user.email || "admin")}</b> · <button class="linkbtn" id="signOut">Sign out</button></p>
         <div class="card stack">
           <label class="label" for="sName">Name</label>
           <input id="sName" maxlength="24" value="${esc(draft.name)}" placeholder="PinQuiz">
@@ -404,18 +469,16 @@
       if (!firebaseReady()) return toast("Set up Firebase first (see the README).");
       const out = cleanBrand(draft);
       try {
-        const { db, signedIn } = initFirebase();
-        const owner = (await signedIn).uid;
-        await db.ref("settings").set(Object.assign({}, out, { ownerUid: owner }));
+        await initFirebase().db.ref("settings").set(out);
       } catch (err) {
-        const denied = String((err && (err.code || err.message)) || "").toLowerCase().includes("permission");
-        return toast(denied ? "Couldn't save. Settings can only be changed from the browser that first saved them, and the database rules must be up to date (see the README)." : fbError(err));
+        return toast(denied(err) ? "Couldn't save. Sign in as the admin again, and make sure the database rules are up to date (see the README)." : fbError(err));
       }
       setBrand(out);
       dirty = false;
       toast("Settings saved");
       go(home);
     };
+    $("#signOut").onclick = async () => { await initFirebase().auth.signOut(); go(home); };
     drawLogo();
     drawIcons();
     drawPreview();
@@ -975,11 +1038,18 @@ ${ADMIN ? `          <div class="card stack">
     if (emu) { auth.useEmulator(emu.auth); db.useEmulator(emu.dbHost, emu.dbPort); }
     let offset = 0;
     db.ref(".info/serverTimeOffset").on("value", (s) => { offset = s.val() || 0; });
-    const signedIn = new Promise((resolve, reject) => {
-      const stop = auth.onAuthStateChanged((u) => { if (u) { stop(); resolve(u); } });
-      if (!auth.currentUser) auth.signInAnonymously().catch(reject);
+    // Waits for the saved sign-in (the admin's account, if they signed in on this
+    // device) before falling back to an invisible anonymous one. Callers share
+    // that one anonymous sign-in, so the page keeps a single identity.
+    let anon = null;
+    const ready = () => new Promise((resolve, reject) => {
+      const stop = auth.onAuthStateChanged((u) => {
+        if (u) { stop(); resolve(u); return; }
+        if (!anon) anon = auth.signInAnonymously().finally(() => { anon = null; });
+        anon.catch(reject);
+      });
     });
-    fb = { auth, db, signedIn, now: () => Date.now() + offset, TS: firebase.database.ServerValue.TIMESTAMP };
+    fb = { auth, db, get signedIn() { return ready(); }, now: () => Date.now() + offset, TS: firebase.database.ServerValue.TIMESTAMP };
     return fb;
   }
   function fbError(err) {
@@ -989,6 +1059,7 @@ ${ADMIN ? `          <div class="card stack">
     return (err && err.message) || "Something went wrong talking to Firebase.";
   }
   const nickKey = (n) => n.toLowerCase();
+  const denied = (err) => String((err && (err.code || err.message)) || "").toLowerCase().includes("permission");
 
   function scorePoints(elapsedMs, timeS) {
     // Faster correct answers earn more: full marks instantly, half at the buzzer.

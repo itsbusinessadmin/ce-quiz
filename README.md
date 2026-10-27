@@ -43,10 +43,14 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 
 ## Settings: name, logo and answer icons
 
-On the admin page, **Settings** changes the game's name, adds a logo, and picks the marks on the answer buttons (shapes, letters, numbers, or your own emoji or pictures). Everyone sees the change: the admin page, the big screen and players' phones.
+On the admin page, **Settings** changes the game's name, adds a logo, and picks the marks on the answer buttons (shapes, letters, numbers, or your own emoji or pictures). Settings are stored in Firebase and sync live: a change saved on any device shows on every open admin page, big screen and player's phone within a second.
 
-- After updating to this version, paste the new `database.rules.json` into the Realtime Database **Rules** tab and click **Publish**, or settings won't save.
-- Settings can only be changed from the browser that saved them first. To hand them to another browser, delete the `settings` entry in the Realtime Database **Data** tab, then save from the new browser.
+Settings need the **admin account**, which works on any device (laptop, phone, tablet). Set it up once:
+
+1. In the Firebase console: **Authentication → Sign-in method → Add new provider → Email/Password** → turn it on → **Save**.
+2. **Authentication → Users → Add user**: your email and a password.
+3. Paste the latest `database.rules.json` into **Realtime Database → Rules** and click **Publish**.
+4. Open **Settings** on the admin page and sign in. The first account that signs in becomes the admin; other accounts can't change settings. To change the admin, delete the `admins` entry under **Realtime Database → Data** and sign in with the new account.
 
 ## Free plan limits
 
