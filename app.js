@@ -1292,7 +1292,6 @@
                   <div class="stack" style="gap:0"><span>Game PIN</span><span class="pinval">${pin.slice(0, 3)} ${pin.slice(3)}</span></div>
                   <p>Join at <b class="joinurl">${esc(location.host + playerPath)}</b></p>
                   <button class="ghost small" id="copy">Copy join link</button>
-                  <p class="muted tip">In a Zoom, Meet or Teams call? Share this window and paste the join link in the chat.</p>
                 </aside>
                 <div class="lob-main">
                   ${(() => { const t = editableCover(quiz.cover, quiz.title).title.trim(); return t ? `<div class="lob-title">${esc(t)}</div>` : ""; })()}
