@@ -71,7 +71,7 @@ Settings need the **admin account**, which works on any device (laptop, phone, t
 }
 ```
 
-- `cover` (optional): what the big screen shows while players join, next to the game PIN and QR code: the title and a picture or GIF as `media` (same format as below).
+- `cover` (optional): what the big screen shows while players join, next to the game PIN and QR code: its own `title` (separate from the quiz title; leave it empty for no heading) and a picture or GIF as `media` (same format as below). Quizzes without a cover `title` use the quiz title.
 - `type`: `"quiz"` (2 to 4 answers), `"tf"` (true or false), or `"slide"` (a cover slide between questions: `text` is its title, plus optional `media`; no answers or points).
 - `correct`: the index of the right answer. For a multi-select question (`"multi": true`), a list of indexes. Players score only if they pick exactly those.
 - `time`: 5, 10, 15, 20, 30, 45, 60, 90, 120, 180 or 240 seconds.
