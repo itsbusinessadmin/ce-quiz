@@ -425,12 +425,9 @@ button.p-go { width: 100%; max-width: 420px; padding: 16px 22px; font-size: 1.1r
 .chip.me { background: var(--spot); color: var(--ink); }
 
 /* Question */
-.p-timebar { height: 6px; border-radius: 99px; background: var(--panel); overflow: hidden; }
+.p-timebar { height: 6px; margin-bottom: 14px; border-radius: 99px; background: var(--panel); overflow: hidden; }
 .p-timebar i { display: block; height: 100%; background: var(--spot); transform-origin: left; transition: transform 250ms linear, background-color 300ms ease; }
 .p-timebar.low i { background: var(--bad); }
-.p-ask { display: flex; flex-direction: column; gap: 8px; margin-block: 14px; }
-.p-badges { display: flex; flex-wrap: wrap; gap: 6px; }
-.p-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: .9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .p-pad { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 60vh; }
 .p-pad.two { grid-template-columns: 1fr; }
 button.p-tile { position: relative; flex-direction: column; gap: 12px; padding: 14px; border-radius: 18px; color: #fff; font: 700 1.05rem/1.25 var(--body); overflow-wrap: anywhere; box-shadow: 0 5px 0 rgba(0,0,0,.28); transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }

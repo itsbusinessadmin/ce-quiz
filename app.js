@@ -1518,10 +1518,8 @@
             </section>`);
         } else {
           const frac = () => msLeft() / (s.time * 1000);
-          const tags = badges(q);
           paint(key + ":ask", `${header(s, you)}
             <div class="p-timebar${frac() < 0.25 ? " low" : ""}" id="tbar" role="progressbar" aria-label="Time left" aria-valuemin="0" aria-valuemax="${s.time}" aria-valuenow="${secs()}"><i style="transform:scaleX(${frac()})"></i></div>
-            <div class="p-ask">${tags ? `<div class="p-badges">${tags}</div>` : ""}<p class="p-meta"><span>Answer on the big screen</span><span id="left">${secs()}s left · ${n} answered</span></p></div>
             <div class="p-pad${q.options.length === 2 ? " two" : ""}">${q.options.map((o, i) => `<button class="p-tile c${i}${sel.includes(i) ? " on" : ""} p-in" style="--i:${i}" data-c="${i}" aria-label="${esc(o)}"${q.multi ? ` aria-pressed="${sel.includes(i)}"` : ""}>${choiceIcon(i)}${q.multi ? `<span class="p-tick">${CHECK}</span>` : ""}</button>`).join("")}</div>
             ${q.multi ? `<button class="p-go p-submit" id="submit" ${sel.length ? "" : "disabled"}>${sel.length ? `Submit ${sel.length} ${sel.length === 1 ? "answer" : "answers"}` : "Pick your answers"}</button>` : ""}`);
           app.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => {
@@ -1532,13 +1530,12 @@
           });
           if (q.multi) $("#submit").onclick = () => answer(sel.reduce((m, i) => m | (1 << i), 0));
           tick = setInterval(() => {
-            const bar = $("#tbar"), el = $("#left");
+            const bar = $("#tbar");
             if (bar) {
               bar.firstElementChild.style.transform = `scaleX(${frac()})`;
               bar.classList.toggle("low", frac() < 0.25);
               bar.setAttribute("aria-valuenow", secs());
             }
-            if (el) el.textContent = `${secs()}s left · ${n} answered`;
           }, 250);
         }
       } else if (s.phase === "slide" || (s.phase === "board" && isSlide(game.quiz.questions[s.q]))) {
