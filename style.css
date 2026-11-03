@@ -365,7 +365,6 @@ details.help b { color: var(--fg); }
 .lob-join .qr { padding: calc(var(--u) * .9); flex: none; }
 .lob-join .qr svg, .lob-join .qr img { width: 100%; height: auto; aspect-ratio: 1; }
 .lob-join .pinval { font: 800 calc(var(--u) * 5)/1.05 var(--display); letter-spacing: .04em; }
-.lob-join .joinurl { word-break: break-all; }
 .lob-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: calc(var(--u) * 1.6); }
 .lob-title { flex: none; background: var(--fg); color: var(--ink); border-radius: calc(var(--u) * 1.6); padding: calc(var(--u) * 1.8) calc(var(--u) * 2.4); text-align: center; font: 800 calc(var(--u) * 3.2)/1.15 var(--display); text-transform: uppercase; overflow-wrap: anywhere; }
 .lob-media { flex: 1; min-height: 0; position: relative; background: #fff; border-radius: calc(var(--u) * 1.6); }

@@ -1290,7 +1290,6 @@
                   <h3>Join</h3>
                   <div class="qr" id="qr" title="${esc(url)}"></div>
                   <div class="stack" style="gap:0"><span>Game PIN</span><span class="pinval">${pin.slice(0, 3)} ${pin.slice(3)}</span></div>
-                  <p>Join at <b class="joinurl">${esc(location.host + playerPath)}</b></p>
                   <button class="ghost small" id="copy">Copy join link</button>
                 </aside>
                 <div class="lob-main">
