@@ -63,9 +63,10 @@
     };
   }
   // The cover is what the big screen shows while players join.
-  function editableCover(c) {
+  function editableCover(c, fallback) {
     c = c || {};
     return {
+      title: typeof c.title === "string" ? c.title.slice(0, 80) : String(fallback || "").slice(0, 80),
       media: validMedia(c.media) && c.media.kind === "image" ? { id: c.media.id, kind: "image", name: String(c.media.name || "").slice(0, 80) } : null,
     };
   }
@@ -622,7 +623,7 @@ ${ADMIN ? `          <div class="card stack">
           await mediaDb.put(id, await (await fetch(m.data)).blob());
           x.media = { id, kind, name: m.name };
         }
-        q.cover = editableCover(q.cover);
+        q.cover = editableCover(q.cover, q.title);
         if (!q.cover.media) delete q.cover.media;
         q.questions = q.questions.map((x) => {
           const y = editable(x);
@@ -640,7 +641,7 @@ ${ADMIN ? `          <div class="card stack">
   // index array while editing and saved back as a number for single select.
   function editor(quiz) {
     quiz.questions = quiz.questions.map(editable);
-    quiz.cover = editableCover(quiz.cover);
+    quiz.cover = editableCover(quiz.cover, quiz.title);
     // cur is the question being edited; -1 is the cover page.
     let cur = -1, dirty = false, adding = false, dragFrom = null, showProblems = false, pasteFile = null;
     const q = () => quiz.questions[cur];
@@ -687,7 +688,7 @@ ${ADMIN ? `          <div class="card stack">
           <button class="thumb" data-pick="-1" ${cur === -1 ? 'aria-current="true"' : ""}>
             <span class="t-type"><span>Cover</span></span>
             ${cm && cm.url ? `<img class="t-img" src="${esc(cm.url)}" alt="">` : ""}
-            <span class="t-text">${quiz.title.trim() ? esc(quiz.title) : '<span class="muted">Untitled quiz</span>'}</span>
+            <span class="t-text">${quiz.cover.title.trim() ? esc(quiz.cover.title) : '<span class="muted">No title</span>'}</span>
           </button>
         </li>` + quiz.questions.map((x, i) => `
         <li class="slide${i === cur ? " on" : ""}${showProblems && problem(x) ? " bad" : ""}" draggable="true" data-i="${i}">
@@ -796,9 +797,9 @@ ${ADMIN ? `          <div class="card stack">
       const c = quiz.cover;
       $("#canvas").innerHTML = `
         <p class="label center" style="display:block">Cover · shown on the big screen while players join</p>
-        <textarea id="ctitle" class="ed-q" rows="1" maxlength="80" placeholder="Quiz title" aria-label="Quiz title">${esc(quiz.title)}</textarea>
+        <textarea id="ctitle" class="ed-q" rows="1" maxlength="80" placeholder="Cover title (optional)" aria-label="Cover title">${esc(c.title)}</textarea>
         ${mediaBox(c)}`;
-      fitText($("#ctitle"), (v) => { quiz.title = v; $("#title").value = v; });
+      fitText($("#ctitle"), (v) => { c.title = v; });
       wireMedia(c);
     }
 
@@ -853,7 +854,7 @@ ${ADMIN ? `          <div class="card stack">
           <h3>Cover</h3>
           <p class="muted">The big screen shows this while players join, next to the game PIN and QR code.</p>
           <ul class="tips muted">
-            <li>The quiz title is the heading.</li>
+            <li>The cover has its own title, separate from the quiz name at the top. Leave it empty for no heading.</li>
             <li>Add a picture or GIF, like a logo or a theme image.</li>
           </ul>
           <button class="ghost small" id="toFirst">Edit question 1 →</button>`;
@@ -949,7 +950,7 @@ ${ADMIN ? `          <div class="card stack">
 
     function saveQuiz() {
       const title = quiz.title.trim();
-      if (!title) { select(-1); $("#ctitle").focus(); return toast("Give the quiz a title."); }
+      if (!title) { $("#title").focus(); return toast("Give the quiz a title."); }
       if (!countQs(quiz.questions)) return toast("Add at least one question.");
       const bad = quiz.questions.findIndex(problem);
       if (bad >= 0) {
@@ -957,7 +958,7 @@ ${ADMIN ? `          <div class="card stack">
         select(bad);
         return toast(`${isSlide(quiz.questions[bad]) ? "Cover slide" : "Question " + qNumber(quiz.questions, bad)}: ${problem(quiz.questions[bad])}`);
       }
-      const cover = {};
+      const cover = { title: quiz.cover.title.trim() };
       if (quiz.cover.media) cover.media = quiz.cover.media;
       const out = { id: quiz.id, title, cover, questions: quiz.questions.map((x) => {
         if (isSlide(x)) {
@@ -988,8 +989,6 @@ ${ADMIN ? `          <div class="card stack">
     $("#title").oninput = (e) => {
       quiz.title = e.target.value;
       touch();
-      drawSlides();
-      if (cur < 0) $("#ctitle").value = quiz.title;
     };
     $("#saveBtn").onclick = saveQuiz;
     $("#exit").onclick = (e) => {
@@ -999,7 +998,7 @@ ${ADMIN ? `          <div class="card stack">
       go(quizList);
     };
     drawAll();
-    if (!quiz.title) $("#ctitle").focus();
+    if (!quiz.title) $("#title").focus();
   }
 
   function pickQuiz() {
@@ -1145,7 +1144,7 @@ ${ADMIN ? `          <div class="card stack">
         const [g, s] = await Promise.all([db.ref("games/" + pin).get(), db.ref("secrets/" + pin).get()]);
         if (!g.exists() || g.val().hostUid !== uid || !s.exists()) { save(STORE_HOSTING, null); return errorScreen("That game has ended", "Start a new one from the home screen."); }
         const media = s.val().media || [];
-        quiz = { title: g.val().quiz.title, cover: { media: s.val().coverMedia || null }, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] },
+        quiz = { title: g.val().quiz.title, cover: { title: s.val().coverTitle, media: s.val().coverMedia || null }, questions: g.val().quiz.questions.map((q, i) => Object.assign({}, q, { correct: s.val().correct[i] },
           typeof media[i] === "string" ? { image: media[i] } : { media: media[i] || null })) };
       } else {
         const pub = { title: quiz.title, questions: quiz.questions.map((q) => ({ type: q.type || "quiz", text: q.text, options: q.options, time: q.time, points: q.points ?? 1, multi: !!q.multi })) };
@@ -1158,7 +1157,8 @@ ${ADMIN ? `          <div class="card stack">
         }
         // Only a reference to this browser's stored media, so a refresh can resume.
         const cm = quiz.cover && validMedia(quiz.cover.media) ? { id: quiz.cover.media.id, kind: "image", name: quiz.cover.media.name || "" } : null;
-        await db.ref("secrets/" + pin).set({ correct: quiz.questions.map(corrects), coverMedia: cm, media: quiz.questions.map((q) => (validMedia(q.media) ? { id: q.media.id, kind: q.media.kind, name: q.media.name || "" } : q.image || "")) });
+        const ct = editableCover(quiz.cover, quiz.title).title.trim();
+        await db.ref("secrets/" + pin).set({ correct: quiz.questions.map(corrects), coverTitle: ct, coverMedia: cm, media: quiz.questions.map((q) => (validMedia(q.media) ? { id: q.media.id, kind: q.media.kind, name: q.media.name || "" } : q.image || "")) });
       }
     } catch (e) {
       return errorScreen("Couldn't start the game", fbError(e), () => hostScreen(quiz, resume));
@@ -1282,7 +1282,7 @@ ${ADMIN ? `          <div class="card stack">
                   <p class="muted tip">In a Zoom, Meet or Teams call? Share this window and paste the join link in the chat.</p>
                 </aside>
                 <div class="lob-main">
-                  <div class="lob-title">${esc(quiz.title)}</div>
+                  ${(() => { const t = editableCover(quiz.cover, quiz.title).title.trim(); return t ? `<div class="lob-title">${esc(t)}</div>` : ""; })()}
                   ${coverSrc ? `<div class="lob-media">${mediaTag(coverSrc)}</div>` : ""}
                 </div>
                 <aside class="lob-card lob-people">
