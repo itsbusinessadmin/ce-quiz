@@ -18,6 +18,12 @@
   ];
 
   const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const SCREEN_ICON = '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const RESULT_ICON = {
+    ok: CHECK,
+    no: '<svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>',
+    miss: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M12 10v3.5l2.5 2M9.5 3h5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+  };
   // A "slide" is a cover page between questions: a title and media, no answers.
   const TYPES = { quiz: "Quiz", tf: "True or false", slide: "Cover slide" };
   const TYPE_HINT = { quiz: "Up to 4 answers", tf: "Two answers", slide: "Title and picture, no answers" };
@@ -508,28 +514,35 @@
 
   // ---------- home ----------
   function home() {
-    app.innerHTML = `
+    app.innerHTML = ADMIN ? `
       <section class="stack home">
         <div class="stack center">
           <div class="brand" data-brand>${brandInner()}</div>
-          <p class="muted">${ADMIN ? "Admin: host games and manage your quizzes." : "Live quiz games for a room full of phones. Free, no accounts."}</p>
+          <p class="muted">Admin: host games and manage your quizzes.</p>
         </div>
         <div class="row center" id="resume"></div>
         <div class="narrow">
-${ADMIN ? `          <div class="card stack">
+          <div class="card stack">
             <h2>Host a game</h2>
             <button id="hostBtn">Host a game</button>
             <button class="ghost" id="editBtn">Create and edit quizzes</button>
             <button class="ghost" id="setBtn">Settings</button>
-          </div>` : `          <form class="card stack" id="joinForm">
-            <h2>Join a game</h2>
-            <label class="label" for="pinIn">Game PIN</label>
-            <input id="pinIn" class="pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="000000" required>
-            <label class="label" for="nickIn">Nickname</label>
-            <input id="nickIn" maxlength="16" autocomplete="nickname" placeholder="Your name" pattern="[A-Za-z0-9 _\\-]{1,16}" title="Letters, numbers, spaces, - and _" required>
-            <button type="submit">Join</button>
-          </form>`}
+          </div>
         </div>
+      </section>` : `
+      <section class="p-join">
+        <div class="p-hero p-in">
+          <div class="brand" data-brand>${brandInner()}</div>
+          <p class="muted">Enter the game PIN shown on the big screen.</p>
+        </div>
+        <div class="row center" id="resume"></div>
+        <form class="p-card p-in" style="--i:1" id="joinForm">
+          <label class="p-field" for="pinIn"><span class="label">Game PIN</span>
+            <input id="pinIn" class="p-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="000000" required></label>
+          <label class="p-field" for="nickIn"><span class="label">Nickname</span>
+            <input id="nickIn" maxlength="16" autocomplete="nickname" placeholder="Your name" pattern="[A-Za-z0-9 _\\-]{1,16}" title="Letters, numbers, spaces, - and _" required></label>
+          <button type="submit" class="p-go">Join game</button>
+        </form>
       </section>`;
     if (ADMIN) {
       const hosting = load(STORE_HOSTING, null);
@@ -1400,7 +1413,7 @@ ${ADMIN ? `          <div class="card stack">
     let dead = false, tick = null, uid = null;
     const subs = [];
     cleanup = () => { dead = true; clearInterval(tick); subs.forEach((f) => f()); };
-    app.innerHTML = `<section class="stack center home"><h2>Joining game ${esc(pin)}…</h2><button class="ghost" id="back">Cancel</button></section>`;
+    app.innerHTML = `<section class="p-center"><span class="p-spin" aria-hidden="true"></span><h2>Joining game ${esc(pin.slice(0, 3) + " " + pin.slice(3))}</h2><button class="ghost small" id="back">Cancel</button></section>`;
     $("#back").onclick = () => go(home);
 
     const gref = db.ref("games/" + pin);
@@ -1455,10 +1468,22 @@ ${ADMIN ? `          <div class="card stack">
       gref.child("answers/" + s.qk + "/" + uid).set({ c, at: TS }).catch(() => { tooLate = true; render(); });
     }
 
+    // Each nickname gets one of the four answer colours for its avatar.
+    const avatar = (n, cls) => `<span class="p-av${cls ? " " + cls : ""}" style="--av:var(--a${[...n].reduce((h, ch) => h + ch.charCodeAt(0), 0) % 4})" aria-hidden="true">${esc(n.trim().charAt(0).toUpperCase())}</span>`;
+
     function header(s, you) {
       const qs = game.quiz ? game.quiz.questions : [];
       const show = s.phase !== "lobby" && qs[s.q] && !isSlide(qs[s.q]);
-      return `<div class="row"><b>${esc(nick)}</b><div class="spacer"></div>${show ? `<span class="label">Q ${qNumber(qs, s.q)}/${countQs(qs)}</span>` : ""}<span class="label" style="color:var(--fg)">${you ? you.score : 0} pts</span></div>`;
+      return `<header class="p-top"><span class="p-me">${avatar(nick)}<b>${esc(nick)}</b></span><span class="spacer"></span>${show ? `<span class="p-q">Q ${qNumber(qs, s.q)}/${countQs(qs)}</span>` : ""}<span class="p-score">${you ? you.score : 0}<small> pts</small></span></header>`;
+    }
+
+    // Live updates redraw the screen often; entrance animations play only when
+    // the view itself changes, not on every redraw.
+    let shownView = "";
+    function paint(view, html) {
+      app.classList.toggle("settled", view === shownView);
+      shownView = view;
+      app.innerHTML = html;
     }
 
     function render() {
@@ -1471,25 +1496,36 @@ ${ADMIN ? `          <div class="card stack">
       const rank = order.findIndex((p) => p.uid === uid) + 1;
       const you = order[rank - 1];
       const mine = game.scores[uid] || {};
+      const key = (s.phase === "board" ? "reveal" : s.phase) + ":" + (s.qk || "");
       if (s.phase === "lobby") {
-        app.innerHTML = `<section class="stack center home"><span class="label">You're in</span><h1>${esc(nick)}</h1><p class="muted">${esc(game.quiz.title)}</p>
-          <p>${order.length} ${order.length === 1 ? "player" : "players"} here. The game starts soon.</p>
-          <div class="players">${order.map((p) => `<span class="chip" style="${p.uid === uid ? "background:var(--spot);color:var(--ink)" : ""}">${esc(p.nick)}</span>`).join("")}</div></section>`;
+        paint(key, `<section class="p-center p-lobby">
+            <div class="p-in">${avatar(nick, "big")}</div>
+            <div class="p-who p-in" style="--i:1"><span class="label">You're in</span><h1 class="p-name">${esc(nick)}</h1><p class="muted">${esc(game.quiz.title)}</p></div>
+            <p class="p-live p-in" style="--i:2"><span class="p-dot" aria-hidden="true"></span>${order.length} ${order.length === 1 ? "player" : "players"} here · waiting for the host</p>
+            <div class="p-chips p-in" style="--i:3">${order.map((p) => `<span class="chip${p.uid === uid ? " me" : ""}">${esc(p.nick)}</span>`).join("")}</div>
+          </section>`);
       } else if (s.phase === "question") {
         const q = game.quiz.questions[s.q];
         const answeredByMe = picked !== null || !!(game.answers[s.qk] && game.answers[s.qk][uid]);
         const n = Object.keys(game.answers[s.qk] || {}).length;
-        const left = () => typeof s.startAt === "number" ? Math.max(0, Math.ceil((s.startAt + s.time * 1000 - now()) / 1000)) : s.time;
-        if (tooLate) {
-          app.innerHTML = `${header(s, you)}<section class="stack center home"><h2>Too late</h2><p class="muted">That answer arrived after time ran out.</p></section>`;
-        } else if (answeredByMe) {
-          app.innerHTML = `${header(s, you)}<section class="stack center home"><h2>Answer locked in</h2><p class="muted">${n} of ${order.length} have answered…</p></section>`;
+        const msLeft = () => (typeof s.startAt === "number" ? Math.max(0, s.startAt + s.time * 1000 - now()) : s.time * 1000);
+        const secs = () => Math.ceil(msLeft() / 1000);
+        if (tooLate || answeredByMe) {
+          const chosen = picked === null ? [] : q.options.map((_, i) => i).filter((i) => (q.multi ? (picked >> i) & 1 : picked === i));
+          paint(key + (tooLate ? ":late" : ":locked"), `${header(s, you)}<section class="p-center p-wait">
+              ${chosen.length ? `<div class="p-picked p-in">${chosen.map((i) => `<span class="p-mini c${i}">${choiceIcon(i)}</span>`).join("")}</div>` : ""}
+              <h2 class="p-in" style="--i:1">${tooLate ? "Too late" : "Answer locked in"}</h2>
+              <p class="muted p-in" style="--i:2">${tooLate ? "That answer arrived after time ran out." : `${n} of ${order.length} have answered`}</p>
+              ${tooLate ? "" : '<div class="p-dots" aria-hidden="true"><i></i><i style="--i:1"></i><i style="--i:2"></i></div>'}
+            </section>`);
         } else {
-          app.innerHTML = `${header(s, you)}
-            <div class="stack" style="gap:6px;margin-block:12px"><p style="font-weight:700;font-size:1.15rem">${esc(q.text)}</p>
-              <div class="row" style="gap:8px">${badges(q)}<span class="muted" id="left" style="font-size:.9rem">${left()}s left · ${n} answered</span></div></div>
-            <div class="pad" style="${q.options.length === 2 ? "grid-template-columns:1fr" : ""}">${q.options.map((o, i) => `<button class="c${i}${sel.includes(i) ? " on" : ""}" data-c="${i}" aria-label="${esc(o)}"${q.multi ? ` aria-pressed="${sel.includes(i)}"` : ""}>${choiceIcon(i)}<span>${esc(o)}</span></button>`).join("")}</div>
-            ${q.multi ? `<button id="submit" style="margin-top:12px" ${sel.length ? "" : "disabled"}>Submit ${sel.length ? sel.length + (sel.length === 1 ? " answer" : " answers") : ""}</button>` : ""}`;
+          const frac = () => msLeft() / (s.time * 1000);
+          const tags = badges(q);
+          paint(key + ":ask", `${header(s, you)}
+            <div class="p-timebar${frac() < 0.25 ? " low" : ""}" id="tbar" role="progressbar" aria-label="Time left" aria-valuemin="0" aria-valuemax="${s.time}" aria-valuenow="${secs()}"><i style="transform:scaleX(${frac()})"></i></div>
+            <div class="p-ask">${tags ? `<div class="p-badges">${tags}</div>` : ""}<p class="p-qtext">${esc(q.text)}</p><p class="p-meta" id="left">${secs()}s left · ${n} answered</p></div>
+            <div class="p-pad${q.options.length === 2 ? " two" : ""}">${q.options.map((o, i) => `<button class="p-tile c${i}${sel.includes(i) ? " on" : ""} p-in" style="--i:${i}" data-c="${i}" aria-label="${esc(o)}"${q.multi ? ` aria-pressed="${sel.includes(i)}"` : ""}>${choiceIcon(i)}<span>${esc(o)}</span>${q.multi ? `<span class="p-tick">${CHECK}</span>` : ""}</button>`).join("")}</div>
+            ${q.multi ? `<button class="p-go p-submit" id="submit" ${sel.length ? "" : "disabled"}>${sel.length ? `Submit ${sel.length} ${sel.length === 1 ? "answer" : "answers"}` : "Pick your answers"}</button>` : ""}`);
           app.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => {
             const c = +b.dataset.c;
             if (!q.multi) return answer(c);
@@ -1497,34 +1533,46 @@ ${ADMIN ? `          <div class="card stack">
             render();
           });
           if (q.multi) $("#submit").onclick = () => answer(sel.reduce((m, i) => m | (1 << i), 0));
-          tick = setInterval(() => { const el = $("#left"); if (el) el.textContent = `${left()}s left · ${n} answered`; }, 250);
+          tick = setInterval(() => {
+            const bar = $("#tbar"), el = $("#left");
+            if (bar) {
+              bar.firstElementChild.style.transform = `scaleX(${frac()})`;
+              bar.classList.toggle("low", frac() < 0.25);
+              bar.setAttribute("aria-valuenow", secs());
+            }
+            if (el) el.textContent = `${secs()}s left · ${n} answered`;
+          }, 250);
         }
       } else if (s.phase === "slide" || (s.phase === "board" && isSlide(game.quiz.questions[s.q]))) {
         const q = game.quiz.questions[s.q];
-        app.innerHTML = `${header(s, you)}<section class="stack center home">
-          <span class="label">${s.phase === "slide" ? "Look at the screen" : "Scores are in"}</span>
-          ${s.phase === "slide" && q.text ? `<h2>${esc(q.text)}</h2>` : ""}
-          ${qNumber(game.quiz.questions, s.q) ? `<p class="muted">You're ${ordinal(rank)} of ${order.length} with ${you ? you.score : 0} points.</p>` : ""}</section>`;
+        paint(key, `${header(s, you)}<section class="p-center">
+          <span class="p-screen p-in" aria-hidden="true">${SCREEN_ICON}</span>
+          <span class="label p-in" style="--i:1">${s.phase === "slide" ? "Look at the screen" : "Scores are in"}</span>
+          ${s.phase === "slide" && q.text ? `<h2 class="p-in" style="--i:2">${esc(q.text)}</h2>` : ""}
+          ${qNumber(game.quiz.questions, s.q) ? `<p class="muted p-in" style="--i:3">You're ${ordinal(rank)} of ${order.length} with ${you ? you.score : 0} points.</p>` : ""}</section>`);
       } else if (s.phase === "reveal" || s.phase === "board") {
         const q = game.quiz.questions[s.q];
         const l = mine.last && mine.last.q === s.q ? mine.last : { correct: false, gained: 0, answered: false };
         const ahead = rank > 1 ? order[rank - 2] : null;
-        app.innerHTML = `${header(s, you)}
-          <section class="stack center feedback ${l.correct ? "ok" : "no"}" style="margin-top:12px">
+        const kind = l.correct ? "ok" : l.answered ? "no" : "miss";
+        paint(key, `${header(s, you)}
+          <section class="p-result ${kind} p-in">
+            <span class="p-mark" aria-hidden="true">${RESULT_ICON[kind]}</span>
             <h2>${l.correct ? "Correct" : l.answered ? "Not quite" : "Time's up"}</h2>
-            <span class="big">${l.correct ? "+" + l.gained : "+0"}</span>
-            ${l.correct && mine.streak >= 2 ? `<p>Answer streak: ${mine.streak}</p>` : ""}
+            <span class="p-gain">+${l.correct ? l.gained : 0}</span>
+            ${l.correct && mine.streak >= 2 ? `<span class="p-pill">Answer streak ×${mine.streak}</span>` : ""}
             ${l.correct ? "" : `<p>${corrects(s).length > 1 ? "The answers were" : "The answer was"} <b>${corrects(s).map((i) => esc(q.options[i])).join(", ")}</b></p>`}
-            <p class="muted">You're ${ordinal(rank)} of ${order.length}${ahead ? `, ${ahead.score - you.score} points behind ${esc(ahead.nick)}` : ""}</p>
-          </section>`;
+            <p class="p-rank">You're <b>${ordinal(rank)}</b> of ${order.length}${ahead ? ` · ${ahead.score === you.score ? "tied with" : ahead.score - you.score + " behind"} ${esc(ahead.nick)}` : ""}</p>
+          </section>`);
       } else if (s.phase === "end") {
-        app.innerHTML = `<section class="stack center home">
-            <span class="label">Final result</span>
-            <h1>${ordinal(rank)} place</h1>
-            <p class="big" style="font-size:2rem">${you ? you.score : 0} points</p>
-            <div class="board narrow">${order.slice(0, 3).map((p, i) => `<div class="r"><span class="pos">${i + 1}</span><span>${esc(p.nick)}</span><span class="pts">${p.score}</span></div>`).join("")}</div>
-            <button id="home">Done</button>
-          </section>`;
+        const row = (p, i) => `<li class="${p.uid === uid ? "me" : ""}"><span class="pos">${i + 1}</span>${avatar(p.nick)}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score}</span></li>`;
+        paint(key, `<section class="p-center p-end">
+            <span class="label p-in">Final result</span>
+            <h1 class="p-in" style="--i:1">${ordinal(rank)} place</h1>
+            <p class="p-total p-in" style="--i:2">${you ? you.score : 0} points</p>
+            <ol class="p-board p-in" style="--i:3">${order.slice(0, 3).map(row).join("")}${rank > 3 && you ? `<li class="gap" aria-hidden="true">···</li>${row(you, rank - 1)}` : ""}</ol>
+            <button class="p-go p-in" style="--i:4" id="home">Done</button>
+          </section>`);
         $("#home").onclick = () => { save(STORE_PLAYER, Object.assign(load(STORE_PLAYER, {}), { pin: null })); go(home); };
       }
     }
