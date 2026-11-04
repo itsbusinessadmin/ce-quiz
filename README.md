@@ -60,23 +60,18 @@ The admin page asks for the **admin account** as soon as it opens; hosting games
 
 ## Quiz file format
 
+Quizzes can be written as JSON and loaded with **Import JSON** on the admin page. **[QUIZ_JSON.md](QUIZ_JSON.md)** explains every field, with examples, and [`examples/sample-quiz.json`](examples/sample-quiz.json) is ready to import.
+
 ```json
 {
   "title": "My quiz",
   "questions": [
-    { "type": "quiz", "text": "2 + 2 = ?", "options": ["3", "4", "5"], "correct": 1, "time": 20, "points": 1 },
-    { "type": "quiz", "text": "Which are even?", "options": ["2", "3", "4"], "correct": [0, 2], "multi": true, "time": 30, "points": 2 },
-    { "type": "tf", "text": "The Sun is a star.", "options": ["True", "False"], "correct": 0, "time": 10, "points": 0 }
+    { "type": "quiz", "text": "2 + 2 = ?", "options": ["3", "4", "5"], "correct": 1, "time": 20, "points": 1 }
   ]
 }
 ```
 
-- `cover` (optional): what the big screen shows while players join, next to the game PIN and QR code: its own `title` (separate from the quiz title; leave it empty for no heading) and a picture or GIF as `media` (same format as below). Quizzes without a cover `title` use the quiz title.
-- `type`: `"quiz"` (2 to 4 answers), `"tf"` (true or false), or `"slide"` (a cover slide between questions: `text` is its title, plus optional `media`; no answers or points).
-- `correct`: the index of the right answer. For a multi-select question (`"multi": true`), a list of indexes. Players score only if they pick exactly those.
-- `time`: 5, 10, 15, 20, 30, 45, 60, 90, 120, 180 or 240 seconds.
-- `points`: `1` standard, `2` double points, `0` no points.
-- `media` (optional): a picture, GIF, MP3 or MP4 shown or played on the host screen, as `{ "kind": "image" | "video" | "audio", "name": "file name", "data": "data:...;base64,..." }`. Export writes it this way; the editor stores uploads (up to 50 MB each) in the browser's IndexedDB, so a quiz's media only exists in the browser that made or imported it. Export it to move it to another computer. Quizzes are saved in the host's browser. Use **Export** / **Import JSON** to back them up.
+Quizzes are saved in the host's browser. Use **Export** / **Import JSON** to back them up or move them to another computer.
 
 ## Credits
 
