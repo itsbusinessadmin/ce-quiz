@@ -327,7 +327,6 @@
         <div class="stack center"><div class="brand" data-brand>${brandInner()}</div></div>
         <form class="card stack" id="loginForm">
           <h2>Admin sign-in</h2>
-          <p class="muted">Sign in to host games, edit quizzes and change settings. The same account works on your laptop, phone or any other device.</p>
           ${problem ? `<p class="bad-note">${esc(problem)}</p>` : ""}
           <label class="label" for="lEmail">Email</label>
           <input id="lEmail" type="email" autocomplete="username" required>
