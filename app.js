@@ -1420,7 +1420,8 @@
     const { db, signedIn, now, TS } = initFirebase();
     let dead = false, tick = null, uid = null;
     const subs = [];
-    cleanup = () => { dead = true; clearInterval(tick); subs.forEach((f) => f()); };
+    let stopConfetti = () => {};
+    cleanup = () => { dead = true; clearInterval(tick); subs.forEach((f) => f()); stopConfetti(); };
     app.innerHTML = `<section class="p-center"><span class="p-spin" aria-hidden="true"></span><h2>Joining game ${esc(pin.slice(0, 3) + " " + pin.slice(3))}</h2><button class="ghost small" id="back">Cancel</button></section>`;
     $("#back").onclick = () => go(home);
 
@@ -1571,16 +1572,91 @@
           </section>`);
       } else if (s.phase === "end") {
         const row = (p, i) => `<li class="${p.uid === uid ? "me" : ""}"><span class="pos">${i + 1}</span>${avatar(p.nick)}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score}</span></li>`;
+        const total = you ? you.score : 0;
+        const tier = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "";
+        const cheer = rank === 1 ? "You won!" : rank <= 3 ? "On the podium!" : rank <= Math.ceil(order.length / 2) ? "Top half. Nice game!" : "Well played!";
+        const fresh = shownView !== key;
         paint(key, `<section class="p-center p-end">
-            <span class="label p-in">Final result</span>
-            <h1 class="p-in" style="--i:1">${ordinal(rank)} place</h1>
-            <p class="p-total p-in" style="--i:2">${you ? you.score : 0} points</p>
+            <div class="p-medal ${tier} p-in" aria-hidden="true"><span class="ribbon"></span><span class="disc"><b>${rank}</b><small>${ordinal(rank).replace(/^\d+/, "")}</small></span></div>
+            <div class="p-who p-in" style="--i:1"><span class="label">Final result · ${ordinal(rank)} of ${order.length}</span><h1 class="p-cheer">${cheer}</h1></div>
+            <p class="p-total p-in" style="--i:2"><span id="total">${fresh ? 0 : total}</span> points</p>
             <ol class="p-board p-in" style="--i:3">${order.slice(0, 3).map(row).join("")}${rank > 3 && you ? `<li class="gap" aria-hidden="true">···</li>${row(you, rank - 1)}` : ""}</ol>
             <button class="p-go p-in" style="--i:4" id="home">Done</button>
           </section>`);
+        if (fresh) {
+          stopConfetti = confetti(rank <= 3 ? 160 : 80);
+          countUp(() => $("#total"), total);
+        }
         $("#home").onclick = () => { save(STORE_PLAYER, Object.assign(load(STORE_PLAYER, {}), { pin: null })); go(home); };
       }
     }
+  }
+
+  const reducedMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // A one-off confetti burst from both bottom corners, in the four answer
+  // colours. Returns a function that stops it early.
+  function confetti(count) {
+    if (reducedMotion()) return () => {};
+    const css = getComputedStyle(document.documentElement);
+    const colors = ["--a0", "--a1", "--a2", "--a3", "--spot"].map((v) => css.getPropertyValue(v).trim() || "#ffcf3f");
+    const c = document.createElement("canvas");
+    c.className = "confetti";
+    c.setAttribute("aria-hidden", "true");
+    document.body.appendChild(c);
+    const ctx = c.getContext("2d"), dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = innerWidth, H = innerHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    ctx.scale(dpr, dpr);
+    const bits = Array.from({ length: count }, (_, i) => {
+      // Fired up and inwards: tilt is the angle from straight up.
+      const left = i % 2 === 0, tilt = 0.2 + Math.random() * 0.5;
+      const v = (0.9 + Math.random() * 0.6) * Math.min(H, 900) * 1.7;
+      return {
+        x: left ? -10 : W + 10, y: H * 0.95, vx: (left ? 1 : -1) * Math.sin(tilt) * v, vy: -Math.cos(tilt) * v,
+        w: 6 + Math.random() * 6, h: 9 + Math.random() * 8, r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 12,
+        flip: Math.random() * 6.28, vf: 6 + Math.random() * 8, color: colors[i % colors.length], delay: Math.random() * 0.25,
+      };
+    });
+    const LIFE = 3.4;
+    let start = 0, raf = 0, last = 0;
+    const frame = (t) => {
+      if (!start) start = last = t;
+      const dt = Math.min(0.033, (t - last) / 1000), age = (t - start) / 1000;
+      last = t;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = Math.max(0, Math.min(1, (LIFE - age) / 0.6));
+      for (const b of bits) {
+        if (age < b.delay) continue;
+        b.vy += 1500 * dt; b.vx *= 1 - 1.2 * dt; b.vy *= 1 - 0.9 * dt;
+        b.x += b.vx * dt; b.y += b.vy * dt; b.r += b.vr * dt; b.flip += b.vf * dt;
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.r);
+        ctx.scale(1, Math.cos(b.flip));
+        ctx.fillStyle = b.color;
+        ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        ctx.restore();
+      }
+      if (age < LIFE) raf = requestAnimationFrame(frame); else stop();
+    };
+    const stop = () => { cancelAnimationFrame(raf); c.remove(); };
+    raf = requestAnimationFrame(frame);
+    return stop;
+  }
+
+  // Counts a number up from 0 so the final score lands with a bit of drama.
+  function countUp(getEl, to) {
+    const set = (n) => { const el = getEl(); if (el) el.textContent = n; };
+    if (reducedMotion() || !to) return set(to);
+    let t0 = 0;
+    const step = (t) => {
+      if (!t0) t0 = t + 250;
+      const k = Math.max(0, Math.min(1, (t - t0) / 1100));
+      set(Math.round(to * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   // Small tags under a live question for settings players should know about.
