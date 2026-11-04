@@ -36,7 +36,7 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 
 ## How to play
 
-1. Open the admin page, `admin.html` (for example `https://<username>.github.io/<repo>/admin.html`) → **Host a game** → pick a quiz. Create and edit quizzes there too.
+1. Open the admin page, `admin.html` (for example `https://<username>.github.io/<repo>/admin.html`), and sign in with the admin account (see below) → **Host a game** → pick a quiz. Create and edit quizzes there too.
    Presenting in a Zoom, Google Meet or Teams call? Share the host window. Every host screen fits a 16:9 window without scrolling, the **Full screen** button (or the F key) hides the browser bars, and **Copy join link** gives you the link to paste in the meeting chat.
 2. Players open the main site (or scan the QR code), then enter the PIN and a nickname. The main page only lets people join games.
 3. **Start game.** Correct answers score up to 1000 points (faster earns more), plus up to 500 bonus points for an answer streak. Double-points questions score twice as much, and no-points questions don't count. A question closes when everyone online has answered, or when time runs out (plus a 1.5-second grace period for answers already on their way).
@@ -45,12 +45,12 @@ Database rules aren't published by the Action. Paste `database.rules.json` into 
 
 On the admin page, **Settings** changes the game's name, adds a logo, and picks the marks on the answer buttons (shapes, letters, numbers, or your own emoji or pictures). Settings are stored in Firebase and sync live: a change saved on any device shows on every open admin page, big screen and player's phone within a second.
 
-Settings need the **admin account**, which works on any device (laptop, phone, tablet). Set it up once:
+The admin page asks for the **admin account** as soon as it opens; hosting games, editing quizzes and Settings all need it. The account works on any device (laptop, phone, tablet), and each device stays signed in until you click **Sign out**. Set it up once:
 
 1. In the Firebase console: **Authentication → Sign-in method → Add new provider → Email/Password** → turn it on → **Save**.
 2. **Authentication → Users → Add user**: your email and a password.
 3. Paste the latest `database.rules.json` into **Realtime Database → Rules** and click **Publish**.
-4. Open **Settings** on the admin page and sign in. The first account that signs in becomes the admin; other accounts can't change settings. To change the admin, delete the `admins` entry under **Realtime Database → Data** and sign in with the new account.
+4. Open the admin page and sign in. The first account that signs in becomes the admin; other accounts can't use the admin page. To change the admin, delete the `admins` entry under **Realtime Database → Data** and sign in with the new account.
 
 ## Free plan limits
 

@@ -284,32 +284,50 @@
     }
   }
 
-  // Settings need the admin account, which works on any device. The first
-  // email/password account to sign in becomes the admin (see the README).
-  async function settingsScreen() {
-    if (!firebaseReady()) return setupNeeded();
-    app.innerHTML = `<section class="stack center home"><h2>Loading settings…</h2></section>`;
+  // The whole admin page needs the admin account, which works on any device.
+  // The first email/password account to sign in becomes the admin (see the
+  // README). Resolves to the admin user, or shows the sign-in screen and
+  // resolves to null.
+  let adminUser = null;
+  async function requireAdmin(next) {
+    if (!firebaseReady()) { setupNeeded(); return null; }
+    app.innerHTML = `<section class="stack center home"><h2>Checking sign-in…</h2></section>`;
     let user;
-    try { user = await initFirebase().signedIn; } catch (e) { return errorScreen("Couldn't load settings", fbError(e), settingsScreen); }
-    if (user.isAnonymous) return adminLogin();
+    try { user = await initFirebase().signedIn; } catch (e) { errorScreen("Couldn't check sign-in", fbError(e), () => requireAdmin(next)); return null; }
+    if (user.isAnonymous) { adminLogin(); return null; }
     const { db } = initFirebase();
     try {
       const admins = (await db.ref("admins").get()).val();
       if (!admins) await db.ref("admins/" + user.uid).set(true);
-      else if (admins[user.uid] !== true) return adminLogin(`${user.email} isn't the admin account for this game.`);
+      else if (admins[user.uid] !== true) { adminLogin(`${user.email} isn't the admin account for this game.`); return null; }
     } catch (e) {
-      return errorScreen("Couldn't check the admin account", "Make sure the database rules are up to date (see the README). " + fbError(e), settingsScreen);
+      errorScreen("Couldn't check the admin account", "Make sure the database rules are up to date (see the README). " + fbError(e), () => requireAdmin(next));
+      return null;
     }
-    settingsEditor(user);
+    adminUser = user;
+    return user;
+  }
+  async function adminStart() {
+    if (await requireAdmin()) go(home);
+  }
+  async function adminSignOut() {
+    adminUser = null;
+    try { await initFirebase().auth.signOut(); } catch { /* already signed out */ }
+    go(adminLogin);
+  }
+
+  async function settingsScreen() {
+    const user = adminUser || await requireAdmin();
+    if (user) settingsEditor(user);
   }
 
   function adminLogin(problem) {
     app.innerHTML = `
-      <section class="stack narrow" style="max-width:480px">
-        <div class="row"><button class="ghost small" id="back">← Back</button></div>
+      <section class="stack narrow home" style="max-width:480px">
+        <div class="stack center"><div class="brand" data-brand>${brandInner()}</div></div>
         <form class="card stack" id="loginForm">
           <h2>Admin sign-in</h2>
-          <p class="muted">Sign in to change settings. The same account works on your laptop, phone or any other device, and changes sync to all of them.</p>
+          <p class="muted">Sign in to host games, edit quizzes and change settings. The same account works on your laptop, phone or any other device.</p>
           ${problem ? `<p class="bad-note">${esc(problem)}</p>` : ""}
           <label class="label" for="lEmail">Email</label>
           <input id="lEmail" type="email" autocomplete="username" required>
@@ -326,7 +344,6 @@
           </ol>
         </details>
       </section>`;
-    $("#back").onclick = () => go(home);
     $("#lEmail").focus();
     $("#loginForm").onsubmit = async (e) => {
       e.preventDefault();
@@ -343,7 +360,7 @@
         if (code.includes("invalid") || code.includes("wrong-password") || code.includes("user-not-found")) return toast("Wrong email or password.");
         return toast(fbError(err));
       }
-      go(settingsScreen);
+      go(adminStart);
     };
   }
 
@@ -485,7 +502,7 @@
       toast("Settings saved");
       go(home);
     };
-    $("#signOut").onclick = async () => { await initFirebase().auth.signOut(); go(home); };
+    $("#signOut").onclick = adminSignOut;
     drawLogo();
     drawIcons();
     drawPreview();
@@ -528,6 +545,7 @@
             <button class="ghost" id="editBtn">Create and edit quizzes</button>
             <button class="ghost" id="setBtn">Settings</button>
           </div>
+          <p class="muted center" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;font-size:.9rem">Signed in as <b>${esc((adminUser && adminUser.email) || "admin")}</b> · <button class="linkbtn" id="signOutHome">Sign out</button></p>
         </div>
       </section>` : `
       <section class="p-join">
@@ -553,6 +571,7 @@
       $("#hostBtn").addEventListener("click", () => go(pickQuiz));
       $("#editBtn").addEventListener("click", () => go(quizList));
       $("#setBtn").addEventListener("click", () => go(settingsScreen));
+      $("#signOutHome").addEventListener("click", adminSignOut);
       return;
     }
     const params = new URLSearchParams(location.search);
@@ -1588,6 +1607,6 @@
   }
 
   applyBrand();
-  home();
+  if (ADMIN) adminStart(); else home();
   loadBrand();
 })();
