@@ -692,6 +692,7 @@
           <button class="ghost small" id="exit">← Exit</button>
           <input id="title" class="ed-title" maxlength="80" placeholder="Quiz title" aria-label="Quiz title" value="${esc(quiz.title)}">
           <div class="spacer"></div>
+          <button class="ghost small" id="pvBtn" title="See the big screen as it looks when you share it">Preview</button>
           <button class="small" id="saveBtn">Save quiz</button>
         </header>
         <aside class="ed-rail" aria-label="Questions">
@@ -1014,6 +1015,7 @@
       touch();
     };
     $("#saveBtn").onclick = saveQuiz;
+    $("#pvBtn").onclick = (e) => previewQuiz(quiz, cur, e.currentTarget);
     $("#exit").onclick = (e) => {
       const b = e.currentTarget;
       if (dirty && !b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Discard changes?"; return; }
@@ -1103,6 +1105,173 @@
       ${retry ? '<button id="retry">Try again</button>' : ""}<button class="ghost" id="back">Back</button></section>`;
     if (retry) $("#retry").onclick = () => go(retry);
     $("#back").onclick = () => go(home);
+  }
+
+  // ---------- big screen ----------
+  // Markup for the host's big screen, shared by the live game and the editor's
+  // preview so both always look the same. `actions` is the buttons on the right
+  // of the top bar.
+  const stageView = {
+    lobby: ({ pin, url, title, cover, actions }) => `
+            <section class="screen lobby">
+              <div class="sbar"><div class="brand small" data-brand>${brandInner()}</div><div class="spacer"></div>${actions}</div>
+              <div class="lobby-grid">
+                <aside class="lob-card lob-join">
+                  <h3>Join</h3>
+                  <div class="qr" id="qr" title="${esc(url)}"></div>
+                  <div class="stack" style="gap:0"><span>Game PIN</span><span class="pinval">${pin.slice(0, 3)} ${pin.slice(3)}</span></div>
+                  <button class="ghost small" id="copy">Copy join link</button>
+                </aside>
+                <div class="lob-main">
+                  ${title ? `<div class="lob-title">${esc(title)}</div>` : ""}
+                  ${cover ? `<div class="lob-media">${mediaTag(cover)}</div>` : ""}
+                </div>
+                <aside class="lob-card lob-people">
+                  <div class="row" style="gap:10px"><h3>Participants</h3><span class="count" id="pcount">0</span></div>
+                  <div class="plist" id="plist"></div>
+                </aside>
+              </div>
+            </section>`,
+    question: ({ q, label, media, answered, online, actions }) => `
+          <section class="screen">
+            <div class="sbar"><span class="label">${label}</span>${badges(q)}<div class="spacer"></div>${actions}</div>
+            <div class="qtext">${esc(q.text)}</div>
+            <div class="qmid">
+              <div class="timer" id="timer"><span>${q.time}</span></div>
+              ${media ? '<div class="qmedia" id="qmedia"></div>' : '<div class="grow"></div>'}
+              <div class="stats"><b>${answered}<small>/${online}</small></b><span class="label">answered</span></div>
+            </div>
+            <div class="answers">${q.options.map((o, i) => `<div class="ans c${i}">${choiceIcon(i)}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
+          </section>`,
+    reveal: ({ q, label, counts, right, actions }) => {
+      const max = Math.max(1, ...counts);
+      return `
+          <section class="screen">
+            <div class="sbar"><span class="label">${label}</span><div class="spacer"></div>${actions}</div>
+            <div class="qtext">${esc(q.text)}</div>
+            <div class="bars" style="grid-template-columns:repeat(${q.options.length},1fr)">${counts.map((n, i) => `
+              <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${right.includes(i) ? 1 : .35}"></div></div>`).join("")}</div>
+            <div class="answers">${q.options.map((o, i) => `<div class="ans c${i} ${right.includes(i) ? "" : "dim"}">${choiceIcon(i)}<span class="txt">${esc(o)}</span>${right.includes(i) ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
+          </section>`;
+    },
+    slide: ({ q, label, media, actions }) => `
+          <section class="screen">
+            <div class="sbar"><span class="label">${label}</span><div class="spacer"></div>${actions}</div>
+            ${q.text ? `<div class="qtext slide-title${media ? "" : " alone"}">${esc(q.text)}</div>` : ""}
+            ${media ? '<div class="qmid"><div class="qmedia" id="qmedia"></div></div>' : ""}
+          </section>`,
+  };
+  function drawQr(el, url) {
+    if (!el) return;
+    try {
+      const qr = qrcode(0, "M");
+      qr.addData(url);
+      qr.make();
+      el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+    } catch { el.remove(); }
+  }
+  const stageLabel = (qs, i) => (isSlide(qs[i]) ? "Cover slide" : `Question ${qNumber(qs, i)} of ${countQs(qs)}`);
+
+  // The editor's Preview: the big screen exactly as the room sees it when the
+  // host shares this window in Teams, Meet or Zoom, built from the quiz being
+  // edited (saved or not). Steps: waiting screen, then each question and its
+  // answer reveal, and each cover slide.
+  async function previewQuiz(quiz, from, opener) {
+    // Same clean-up as saving: empty answers are dropped and colours close up.
+    const qs = quiz.questions.map((x) => {
+      if (isSlide(x)) return Object.assign({}, x, { text: x.text.trim() });
+      const kept = [], at = [];
+      x.options.forEach((o, i) => { if (o.trim()) { at[i] = kept.length; kept.push(o.trim()); } });
+      return Object.assign({}, x, { text: x.text.trim(), options: kept, correct: x.correct.filter((c) => at[c] !== undefined).map((c) => at[c]) });
+    });
+    const [cover, ...srcs] = await Promise.all([quiz.cover || {}, ...quiz.questions].map(mediaSource));
+    const steps = [{ kind: "lobby" }];
+    qs.forEach((q, i) => steps.push(...(isSlide(q) ? [{ kind: "slide", i }] : [{ kind: "question", i }, { kind: "reveal", i }])));
+    let at = Math.max(0, steps.findIndex((st) => st.i === from)), tick = null;
+
+    const root = document.createElement("div");
+    root.className = "stage stage-pv";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-modal", "true");
+    root.setAttribute("aria-label", "Preview of the shared screen");
+    root.innerHTML = '<div class="pv-view"></div><div class="pv-ctl"></div>';
+    const view = root.firstElementChild, ctl = root.lastElementChild;
+    const fsLabel = () => (document.fullscreenElement ? "Exit full screen" : "Full screen");
+    const fsToggle = () => (document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen()).catch(() => toast("Full screen isn't available here.")).finally(show);
+    const pause = () => view.querySelectorAll("video, audio").forEach((m) => m.pause());
+
+    function show() {
+      clearInterval(tick);
+      pause();
+      const st = steps[at], q = qs[st.i];
+      const fs = `<button class="ghost small" data-pv="fs">${fsLabel()}</button>`;
+      const next = `<button class="small" data-pv="next">${st.i + 1 >= qs.length ? "Show scoreboard" : "Next"}</button>`;
+      if (st.kind === "lobby") {
+        const url = joinUrl("123456");
+        view.innerHTML = stageView.lobby({ pin: "123456", url, title: quiz.cover.title.trim(), cover, actions: `<button class="ghost small" data-pv="exit">End game</button><button class="small" data-pv="next">Start game</button>${fs}` });
+        drawQr(view.querySelector("#qr"), url);
+        view.querySelector("#plist").innerHTML = '<p class="muted">Waiting for participants…</p>';
+        view.querySelector("#copy").onclick = () => toast("In a real game this copies the join link.");
+      } else if (st.kind === "question") {
+        view.innerHTML = stageView.question({ q, label: stageLabel(qs, st.i), media: !!srcs[st.i], answered: 0, online: 0, actions: `<button class="ghost small" data-pv="next">Skip timer</button>${fs}` });
+        // The timer runs as it would in a game, from the top each time.
+        const el = view.querySelector("#timer"), t0 = Date.now(), T = q.time * 1000;
+        const draw = () => { const left = Math.max(0, T - (Date.now() - t0)); el.style.setProperty("--p", (100 * left) / T + "%"); el.firstElementChild.textContent = Math.ceil(left / 1000); };
+        draw();
+        tick = setInterval(draw, 200);
+      } else if (st.kind === "reveal") {
+        view.innerHTML = stageView.reveal({ q, label: stageLabel(qs, st.i), counts: q.options.map(() => 0), right: q.correct, actions: next + fs });
+      } else {
+        view.innerHTML = stageView.slide({ q, label: stageLabel(qs, st.i), media: !!srcs[st.i], actions: next + fs });
+      }
+      const box = view.querySelector("#qmedia");
+      if (box && srcs[st.i]) box.innerHTML = mediaTag(srcs[st.i], "autoplay");
+      applyBrand();
+      ctl.innerHTML = `<span class="pv-tag">Preview</span>
+        <button class="ghost small" data-pv="back" ${at ? "" : "disabled"} aria-label="Previous screen">←</button>
+        <span class="pv-step">${at + 1} / ${steps.length}</span>
+        <button class="ghost small" data-pv="next" ${at < steps.length - 1 ? "" : "disabled"} aria-label="Next screen">→</button>
+        <button class="small" data-pv="exit">Exit preview</button>`;
+    }
+    function step(d) {
+      const n = at + d;
+      if (n < 0) return;
+      if (n >= steps.length) return toast("The scoreboard and winners need real players, so the preview ends here.");
+      at = n;
+      show();
+    }
+    function close() {
+      clearInterval(tick);
+      pause();
+      document.removeEventListener("keydown", keys, true);
+      document.removeEventListener("fullscreenchange", show);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      root.remove();
+      document.body.classList.remove("pv-open");
+      if (opener) opener.focus();
+    }
+    const keys = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      if (k === "Escape") close();
+      else if (k === "ArrowRight" || k === "PageDown" || k === " " || k === "Enter") step(1);
+      else if (k === "ArrowLeft" || k === "PageUp") step(-1);
+      else if (k.toLowerCase() === "f") fsToggle();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    root.onclick = (e) => {
+      const b = e.target.closest("[data-pv]");
+      if (!b || b.disabled) return;
+      ({ next: () => step(1), back: () => step(-1), exit: close, fs: fsToggle })[b.dataset.pv]();
+    };
+    if (document.activeElement) document.activeElement.blur();
+    document.body.appendChild(root);
+    document.body.classList.add("pv-open");
+    document.addEventListener("keydown", keys, true);
+    document.addEventListener("fullscreenchange", show);
+    show();
   }
 
   // ---------- host ----------
@@ -1291,33 +1460,9 @@
         if (drawn !== "lobby") {
           drawn = "lobby";
           peopleKey = null;
-          app.innerHTML = `
-            <section class="screen lobby">
-              <div class="sbar"><div class="brand small" data-brand>${brandInner()}</div><div class="spacer"></div>
-                <button class="ghost small" id="quit">End game</button><button class="small" id="start" disabled>Start game</button></div>
-              <div class="lobby-grid">
-                <aside class="lob-card lob-join">
-                  <h3>Join</h3>
-                  <div class="qr" id="qr" title="${esc(url)}"></div>
-                  <div class="stack" style="gap:0"><span>Game PIN</span><span class="pinval">${pin.slice(0, 3)} ${pin.slice(3)}</span></div>
-                  <button class="ghost small" id="copy">Copy join link</button>
-                </aside>
-                <div class="lob-main">
-                  ${(() => { const t = editableCover(quiz.cover, quiz.title).title.trim(); return t ? `<div class="lob-title">${esc(t)}</div>` : ""; })()}
-                  ${coverSrc ? `<div class="lob-media">${mediaTag(coverSrc)}</div>` : ""}
-                </div>
-                <aside class="lob-card lob-people">
-                  <div class="row" style="gap:10px"><h3>Participants</h3><span class="count" id="pcount">0</span></div>
-                  <div class="plist" id="plist"></div>
-                </aside>
-              </div>
-            </section>`;
-          try {
-            const qr = qrcode(0, "M");
-            qr.addData(url);
-            qr.make();
-            $("#qr").innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
-          } catch { $("#qr").remove(); }
+          app.innerHTML = stageView.lobby({ pin, url, title: editableCover(quiz.cover, quiz.title).title.trim(), cover: coverSrc,
+            actions: '<button class="ghost small" id="quit">End game</button><button class="small" id="start" disabled>Start game</button>' });
+          drawQr($("#qr"), url);
           $("#start").onclick = () => startQuestion(0);
           $("#copy").onclick = () => navigator.clipboard.writeText(url).then(() => toast("Join link copied"), () => toast(url));
           $("#quit").onclick = endGame;
@@ -1345,44 +1490,21 @@
         }
         $("#qmedia").appendChild(shown.el);
       };
-      const label = isSlide(qq) ? "Cover slide" : `Question ${qNumber(quiz.questions, s.q)} of ${countQs(quiz.questions)}`;
+      const label = stageLabel(quiz.questions, s.q);
       const lastStep = s.q + 1 >= quiz.questions.length;
       if (s.phase === "question") {
         const n = Object.keys(answersNow()).length;
-        app.innerHTML = `
-          <section class="screen">
-            <div class="sbar"><span class="label">${label}</span>${badges(qq)}<div class="spacer"></div><button class="ghost small" id="skip">Skip timer</button></div>
-            <div class="qtext">${esc(qq.text)}</div>
-            <div class="qmid">
-              <div class="timer" id="timer"><span>${qq.time}</span></div>
-              ${srcs[s.q] ? '<div class="qmedia" id="qmedia"></div>' : '<div class="grow"></div>'}
-              <div class="stats"><b>${n}<small>/${online().length}</small></b><span class="label">answered</span></div>
-            </div>
-            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i}">${choiceIcon(i)}<span class="txt">${esc(o)}</span></div>`).join("")}</div>
-          </section>`;
+        app.innerHTML = stageView.question({ q: qq, label, media: !!srcs[s.q], answered: n, online: online().length, actions: '<button class="ghost small" id="skip">Skip timer</button>' });
         placeMedia();
         drawTimer();
         tick = setInterval(() => { drawTimer(); maybeReveal(); }, 200);
         $("#skip").onclick = reveal;
       } else if (s.phase === "reveal") {
         const counts = s.counts || qq.options.map(() => 0);
-        const max = Math.max(1, ...counts), right = corrects(s);
-        app.innerHTML = `
-          <section class="screen">
-            <div class="sbar"><span class="label">${label}</span><div class="spacer"></div><button class="small" id="next">${lastStep ? "Show scoreboard" : "Next"}</button></div>
-            <div class="qtext">${esc(qq.text)}</div>
-            <div class="bars" style="grid-template-columns:repeat(${qq.options.length},1fr)">${counts.map((n, i) => `
-              <div class="bar"><span class="n">${n}</span><div class="fill" style="height:${(n / max) * 80}%;background:var(--a${i});opacity:${right.includes(i) ? 1 : .35}"></div></div>`).join("")}</div>
-            <div class="answers">${qq.options.map((o, i) => `<div class="ans c${i} ${right.includes(i) ? "" : "dim"}">${choiceIcon(i)}<span class="txt">${esc(o)}</span>${right.includes(i) ? '<span class="count">✓</span>' : ""}</div>`).join("")}</div>
-          </section>`;
+        app.innerHTML = stageView.reveal({ q: qq, label, counts, right: corrects(s), actions: `<button class="small" id="next">${lastStep ? "Show scoreboard" : "Next"}</button>` });
         $("#next").onclick = next;
       } else if (s.phase === "slide") {
-        app.innerHTML = `
-          <section class="screen">
-            <div class="sbar"><span class="label">${label}</span><div class="spacer"></div><button class="small" id="next">${lastStep ? "Show scoreboard" : "Next"}</button></div>
-            ${qq.text ? `<div class="qtext slide-title${srcs[s.q] ? "" : " alone"}">${esc(qq.text)}</div>` : ""}
-            ${srcs[s.q] ? '<div class="qmid"><div class="qmedia" id="qmedia"></div></div>' : ""}
-          </section>`;
+        app.innerHTML = stageView.slide({ q: qq, label, media: !!srcs[s.q], actions: `<button class="small" id="next">${lastStep ? "Show scoreboard" : "Next"}</button>` });
         placeMedia();
         $("#next").onclick = next;
       } else if (s.phase === "board") {
