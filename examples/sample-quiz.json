@@ -1,0 +1,49 @@
+{
+  "title": "Science Warm-up",
+  "cover": {
+    "title": "Welcome! Grab your phone and join"
+  },
+  "questions": [
+    {
+      "type": "slide",
+      "text": "Round 1: Space"
+    },
+    {
+      "type": "quiz",
+      "text": "Which planet is known as the Red Planet?",
+      "options": ["Venus", "Mars", "Jupiter", "Mercury"],
+      "correct": 1,
+      "time": 20,
+      "points": 1
+    },
+    {
+      "type": "tf",
+      "text": "The Sun is a star.",
+      "options": ["True", "False"],
+      "correct": 0,
+      "time": 10,
+      "points": 0
+    },
+    {
+      "type": "slide",
+      "text": "Round 2: Numbers"
+    },
+    {
+      "type": "quiz",
+      "text": "Which of these are prime numbers?",
+      "options": ["2", "9", "13", "21"],
+      "correct": [0, 2],
+      "multi": true,
+      "time": 30,
+      "points": 2
+    },
+    {
+      "type": "quiz",
+      "text": "What is 7 × 8?",
+      "options": ["54", "56", "64"],
+      "correct": 1,
+      "time": 15,
+      "points": 1
+    }
+  ]
+}
