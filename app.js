@@ -334,14 +334,6 @@
           <input id="lPass" type="password" autocomplete="current-password" required>
           <button type="submit" id="lGo">Sign in</button>
         </form>
-        <details class="card help">
-          <summary>First time? Create the admin account</summary>
-          <ol>
-            <li>In the Firebase console, open <b>Authentication → Sign-in method</b>, click <b>Add new provider → Email/Password</b>, turn it on and save.</li>
-            <li>Open the <b>Users</b> tab, click <b>Add user</b>, and enter your email and a password.</li>
-            <li>Sign in here with them. The first account that signs in becomes the admin.</li>
-          </ol>
-        </details>
       </section>`;
     $("#lEmail").focus();
     $("#loginForm").onsubmit = async (e) => {
@@ -354,7 +346,7 @@
       } catch (err) {
         $("#lGo").disabled = false;
         const code = (err && err.code) || "";
-        if (code.includes("operation-not-allowed")) return toast("Email/Password sign-in is turned off. Turn it on in Firebase (see “First time?” below).");
+        if (code.includes("operation-not-allowed")) return toast("Email/Password sign-in is turned off. Turn it on in Firebase (see the README).");
         if (code.includes("too-many-requests")) return toast("Too many tries. Wait a few minutes and try again.");
         if (code.includes("invalid") || code.includes("wrong-password") || code.includes("user-not-found")) return toast("Wrong email or password.");
         return toast(fbError(err));
