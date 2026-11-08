@@ -8,6 +8,7 @@
   const STORE_PLAYER = "pinquiz.player";
   const STORE_HOSTING = "pinquiz.hosting";
   const STORE_MUTED = "pinquiz.muted";
+  const STORE_PLAYER_SOUND = "pinquiz.playerSound";
   const MAX_POINTS = 1000;
 
   const SHAPES = [
@@ -20,6 +21,8 @@
   const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   // Answer shapes drifting behind the join and lobby screens.
   const floaties = () => `<div class="p-floaties" aria-hidden="true">${[0, 1, 2, 3, 0, 2].map((c, i) => `<span class="f${i} c${c}">${choiceIcon(c)}</span>`).join("")}</div>`;
+  const SPEAKER_ON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const SPEAKER_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9.5l5 5M22 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const SCREEN_ICON = '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const RESULT_ICON = {
     ok: CHECK,
@@ -1152,7 +1155,7 @@
     wink: `<circle cx="38" cy="55" r="5"/>${glint(36.5, 53.3)}<path d="M56 56Q62 50 68 56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>`,
     sleepy: '<path d="M32 54Q38 59 44 54M56 54Q62 59 68 54" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>',
     googly: '<circle cx="36" cy="54" r="10" fill="#fff"/><circle cx="64" cy="55" r="7.5" fill="#fff"/><circle cx="33.5" cy="57" r="4.5"/><circle cx="66" cy="52.5" r="3.6"/>',
-    sad: `<circle cx="38" cy="57" r="4.5"/><circle cx="62" cy="57" r="4.5"/><path d="M31 51 43 46.5M69 51 57 46.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M68 62Q70 67 68.5 69.5Q65 70 66 66Z" fill="#7cc8ff"/>`,
+    sad: `<circle cx="38" cy="57" r="4.5"/><circle cx="62" cy="57" r="4.5"/><path d="M31 51 43 46.5M69 51 57 46.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path class="avt-tear" d="M68 62Q70 67 68.5 69.5Q65 70 66 66Z" fill="#7cc8ff"/>`,
   };
   const AV_MOUTH = {
     smile: '<path d="M43 66Q50 73 57 66" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>',
@@ -1185,27 +1188,133 @@
     let eyes = ["dots", "big", "wink", "googly", "dots", "big"][pick(6)];
     let mouth = ["smile", "grin", "tongue", "cat", "teeth", "smile"][pick(6)];
     let hat = body === 2 || body === 4 ? "" : AV_HATS[pick(AV_HATS.length)];
+    const mood = opts.mood || "idle";
     let extra = "";
     if (opts.mood === "happy") { eyes = "arcs"; mouth = "grin"; }
     else if (opts.mood === "sad") { eyes = "sad"; mouth = "frown"; }
-    else if (opts.mood === "sleepy") { eyes = "sleepy"; mouth = "o"; extra = '<g font-family="system-ui, sans-serif" font-weight="800" fill="#fff" stroke="#1d2430" stroke-width="1.4" paint-order="stroke"><text x="78" y="32" font-size="17">z</text><text x="89" y="18" font-size="12">z</text></g>'; }
+    else if (opts.mood === "sleepy") { eyes = "sleepy"; mouth = "o"; extra = '<g font-family="system-ui, sans-serif" font-weight="800" fill="#fff" stroke="#1d2430" stroke-width="1.4" paint-order="stroke"><text class="avt-z" x="78" y="32" font-size="17">z</text><text class="avt-z" style="--i:1" x="89" y="18" font-size="12">z</text></g>'; }
     else if (opts.mood === "wow") { eyes = "big"; mouth = "o"; }
     if (opts.crown) hat = AV_CROWN;
     const delay = (avHash(nick + "~") % 2000) / 1000;
-    return `<svg class="avt" viewBox="0 0 100 100" aria-hidden="true" focusable="false" style="--d:-${delay}s;color:${AV_INK}">
-      <ellipse cx="50" cy="96" rx="27" ry="3.4" fill="#000" opacity=".2"/>
-      <g class="avt-bob">
+    return `<svg class="avt avt-${mood}" viewBox="0 0 100 100" aria-hidden="true" focusable="false" style="--d:-${delay}s;color:${AV_INK}">
+      <ellipse class="avt-shadow" cx="50" cy="96" rx="27" ry="3.4" fill="#000" opacity=".2"/>
+      <g class="avt-bob"><g class="avt-sway">
         <g fill="${color}">${AV_BODY[body]}</g>
         <ellipse cx="50" cy="83" rx="20" ry="8" fill="#fff" opacity=".18"/>
         <ellipse cx="27" cy="65" rx="6.5" ry="3.8" fill="#ff6f8e" opacity=".45"/><ellipse cx="73" cy="65" rx="6.5" ry="3.8" fill="#ff6f8e" opacity=".45"/>
-        <g class="avt-eyes" fill="currentColor">${AV_EYES[eyes]}</g>
-        <g fill="currentColor">${AV_MOUTH[mouth]}</g>
-        ${hat}${extra}
-      </g>
+        <g class="avt-look"><g class="avt-eyes" fill="currentColor">${AV_EYES[eyes]}</g></g>
+        <g class="avt-mouth" fill="currentColor">${AV_MOUTH[mouth]}</g>
+        <g class="avt-hat">${hat}</g>${extra}
+      </g></g>
     </svg>`;
   }
   // `cls`: "big", "live" (idle bounce and blink), or both.
   const avatar = (nick, cls, opts) => `<span class="p-av${cls ? " " + cls : ""}">${avatarSvg(nick, opts)}</span>`;
+
+  // ---------- sound effects ----------
+  // Short sounds made on the fly with the Web Audio API, so there are no files
+  // to download. Browsers only allow sound after a tap, click or key press, so
+  // the first one unlocks it; until then the sounds are skipped silently.
+  const sfx = (() => {
+    let ctx = null, out = null;
+    const ac = () => {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      if (!ctx) {
+        ctx = new C();
+        out = ctx.createGain();
+        out.gain.value = 0.55;
+        out.connect(ctx.destination);
+      }
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      return ctx;
+    };
+    document.addEventListener("pointerdown", ac, true);
+    document.addEventListener("keydown", ac, true);
+    // One oscillator note, optionally sliding to `to`, through an optional low-pass filter.
+    function note(t, freq, dur, { type = "triangle", vol = 0.2, to = 0, lp = 0, vib = 0 } = {}) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+      if (vib) {
+        const lfo = ctx.createOscillator(), depth = ctx.createGain();
+        lfo.frequency.value = 6;
+        depth.gain.value = vib;
+        lfo.connect(depth).connect(o.frequency);
+        lfo.start(t);
+        lfo.stop(t + dur + 0.05);
+      }
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+      g.gain.setValueAtTime(vol, t + Math.max(0.01, dur * 0.6));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      let last = o;
+      if (lp) {
+        const f = ctx.createBiquadFilter();
+        f.type = "lowpass";
+        f.frequency.value = lp;
+        o.connect(f);
+        last = f;
+      }
+      last.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
+    let noiseBuf = null;
+    function noise(t, dur, { vol = 0.15, freq = 2000, q = 0.8, type = "bandpass" } = {}) {
+      if (!noiseBuf) {
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = noiseBuf;
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f).connect(g).connect(out);
+      src.start(t, Math.random() * 0.5, dur + 0.05);
+    }
+    const play = (fn) => () => {
+      const c = ac();
+      if (c && c.state === "running") fn(c.currentTime + 0.02);
+    };
+    const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5;
+    return {
+      // Big screen, answer revealed: a short snare roll that speeds up, then a
+      // bright "ta-da" chord with a cymbal, a boom and a sparkle on top.
+      reveal: play((t) => {
+        let x = t;
+        for (let i = 0; i < 9; i++) { noise(x, 0.05, { vol: 0.08 + i * 0.015, freq: 1800, q: 0.7 }); x += 0.07 - i * 0.004; }
+        const hit = x + 0.03;
+        noise(hit, 0.6, { vol: 0.14, freq: 6500, q: 0.4, type: "highpass" });
+        note(hit, 140, 0.45, { type: "sine", vol: 0.4, to: 55 });
+        [C5, E5, G5].forEach((f, i) => note(hit + i * 0.06, f, 0.2, { type: "square", vol: 0.05, lp: 3000 }));
+        [C5, E5, G5, C6].forEach((f) => note(hit + 0.2, f, 1.0, { type: "triangle", vol: 0.1 }));
+        [2093, 2637, 3136, 4186].forEach((f, i) => note(hit + 0.28 + i * 0.07, f, 0.22, { type: "sine", vol: 0.045 }));
+      }),
+      // Phone, right answer: a happy rising arpeggio with a twinkle.
+      right: play((t) => {
+        [C5, E5, G5, C6].forEach((f, i) => note(t + i * 0.075, f, 0.22, { type: "triangle", vol: 0.18 }));
+        note(t + 0.3, 1568, 0.45, { type: "sine", vol: 0.07 });
+        note(t + 0.36, 2093, 0.4, { type: "sine", vol: 0.05 });
+      }),
+      // Phone, wrong answer: a sad trombone, "wah wah wah waaah".
+      wrong: play((t) => {
+        [[196, 0.28], [185, 0.28], [174.6, 0.28], [164.8, 0.9]].forEach(([f, d], i) =>
+          note(t + i * 0.3, f, d, { type: "sawtooth", vol: 0.24, lp: 900, to: i === 3 ? 150 : 0, vib: i === 3 ? 5 : 0 }));
+      }),
+      // Phone, no answer in time: a slide whistle going down.
+      timeUp: play((t) => note(t, 1300, 0.6, { type: "sine", vol: 0.16, to: 220, vib: 18 })),
+      // A soft pop: tapping an answer, or a player joining the big screen.
+      pop: play((t) => { note(t, 420, 0.09, { type: "sine", vol: 0.22, to: 900 }); noise(t, 0.03, { vol: 0.05, freq: 4000 }); }),
+      // Booping your buddy in the lobby.
+      boop: play((t) => { note(t, 320, 0.12, { type: "sine", vol: 0.2, to: 760 }); note(t + 0.11, 760, 0.12, { type: "sine", vol: 0.16, to: 1100 }); }),
+    };
+  })();
 
   // ---------- big screen ----------
   // Markup for the host's big screen, shared by the live game and the editor's
@@ -1321,6 +1430,7 @@
         tick = setInterval(draw, 200);
       } else if (st.kind === "reveal") {
         view.innerHTML = stageView.reveal({ q, label: stageLabel(qs, st.i), counts: q.options.map(() => 0), right: q.correct, actions: next + fs });
+        sfx.reveal();
       } else {
         view.innerHTML = stageView.slide({ q, label: stageLabel(qs, st.i), media: !!srcs[st.i], actions: next + fs });
       }
@@ -1398,7 +1508,7 @@
     // browser blocks it, the button asks for a click.
     const tracks = { bg: new Audio("music/background.mp3"), question: new Audio("music/question.mp3") };
     Object.values(tracks).forEach((a) => { a.loop = true; a.volume = 0.6; });
-    let muted = !!load(STORE_MUTED, false), blocked = false, scene = null, playedQk = null;
+    let muted = !!load(STORE_MUTED, false), blocked = false, scene = null, playedQk = null, revealedQk = null;
     const sndBtn = document.createElement("button");
     sndBtn.className = "ghost small";
     const sndLabel = () => {
@@ -1549,7 +1659,16 @@
       const s = st(), list = rankOf(game.players, game.scores);
       clearInterval(tick);
       if (s.phase !== "question") music("bg");
-      else {
+      if (s.phase === "reveal" && s.qk !== revealedQk) {
+        // The reveal gets its own sound; the music dips for it.
+        revealedQk = s.qk;
+        if (!muted) {
+          tracks.bg.volume = 0.15;
+          setTimeout(() => { tracks.bg.volume = 0.6; }, 1800);
+          sfx.reveal();
+        }
+      }
+      if (s.phase === "question") {
         // A question with its own video or audio plays that instead of the question music.
         const own = srcs[s.q] && srcs[s.q].kind !== "image";
         music(own ? null : "question", s.qk !== playedQk);
@@ -1578,6 +1697,7 @@
           ? list.map((p) => {
             const isNew = !seenPeople.has(p.uid);
             seenPeople.add(p.uid);
+            if (isNew && !muted) sfx.pop();
             return `<span class="pchip${isNew ? " new" : ""}" style="${game.presence[p.uid] ? "" : "opacity:.45"}">${avatar(p.nick, "live")}<b>${esc(p.nick)}</b></span>`;
           }).join("")
           : '<p class="muted">Waiting for participants…</p>';
@@ -1620,7 +1740,7 @@
             <div class="board">${list.slice(0, 5).map((p, i) => {
               const was = lastBoard.indexOf(p.uid);
               const moved = was > i ? ' <span style="color:var(--good)">▲</span>' : "";
-              return `<div class="r"><span class="pos">${i + 1}</span>${avatar(p.nick, "", { crown: i === 0 })}<span>${esc(p.nick)}${moved}</span>${p.streak >= 2 ? `<span class="muted" style="font-size:.9rem">streak ${p.streak}</span>` : ""}<span class="pts">${p.score}</span></div>`;
+              return `<div class="r"><span class="pos">${i + 1}</span>${avatar(p.nick, "live", { crown: i === 0 })}<span>${esc(p.nick)}${moved}</span>${p.streak >= 2 ? `<span class="muted" style="font-size:.9rem">streak ${p.streak}</span>` : ""}<span class="pts">${p.score}</span></div>`;
             }).join("")}</div>
           </section>`;
         $("#next").onclick = next;
@@ -1708,10 +1828,15 @@
     // A friendly line for the lobby, picked by name so it doesn't change on redraws.
     const QUIPS = ["Ready to win!", "Let's gooo!", "I studied. Kind of.", "Snacks first, then glory.", "Bring it on!", "Here for the confetti.", "Brain warming up…", "Feeling lucky!", "Born ready.", "Is it my turn yet?"];
 
+    // Sound on the phone: on unless the player turned it off.
+    let soundOn = load(STORE_PLAYER_SOUND, true) !== false;
+    const sound = (name) => { if (soundOn) sfx[name](); };
+    const sndToggle = () => `<button class="p-snd" id="psnd" aria-pressed="${soundOn}" aria-label="Sound">${soundOn ? SPEAKER_ON : SPEAKER_OFF}</button>`;
+
     function header(s, you) {
       const qs = game.quiz ? game.quiz.questions : [];
       const show = s.phase !== "lobby" && qs[s.q] && !isSlide(qs[s.q]);
-      return `<header class="p-top"><span class="p-me">${avatar(nick)}<b>${esc(nick)}</b></span><span class="spacer"></span>${show ? `<span class="p-q">Q ${qNumber(qs, s.q)}/${countQs(qs)}</span>` : ""}<span class="p-score">${you ? you.score : 0}<small> pts</small></span></header>`;
+      return `<header class="p-top"><span class="p-me">${avatar(nick, "live")}<b>${esc(nick)}</b></span><span class="spacer"></span>${show ? `<span class="p-q">Q ${qNumber(qs, s.q)}/${countQs(qs)}</span>` : ""}<span class="p-score">${you ? you.score : 0}<small> pts</small></span>${sndToggle()}</header>`;
     }
 
     // Live updates redraw the screen often; entrance animations play only when
@@ -1721,6 +1846,14 @@
       app.classList.toggle("settled", view === shownView);
       shownView = view;
       app.innerHTML = html;
+      const t = $("#psnd");
+      if (t) t.onclick = () => {
+        soundOn = !soundOn;
+        save(STORE_PLAYER_SOUND, soundOn);
+        t.setAttribute("aria-pressed", soundOn);
+        t.innerHTML = soundOn ? SPEAKER_ON : SPEAKER_OFF;
+        if (soundOn) sfx.pop();
+      };
     }
 
     function render() {
@@ -1737,11 +1870,20 @@
       if (s.phase === "lobby") {
         paint(key, `<section class="p-center p-lobby">
             ${floaties()}
-            <div class="p-me-big p-in"><span class="p-bubble">${QUIPS[avHash(nick + "!") % QUIPS.length]}</span>${avatar(nick, "big live")}</div>
+            <div class="p-lobby-snd">${sndToggle()}</div>
+            <div class="p-me-big p-in"><span class="p-bubble">${QUIPS[avHash(nick + "!") % QUIPS.length]}</span><button class="p-boop" id="boop" aria-label="Boop your buddy">${avatar(nick, "big live")}</button></div>
             <div class="p-who p-in" style="--i:1"><span class="label">You're in</span><h1 class="p-name">${esc(nick)}</h1><p class="muted">${esc(game.quiz.title)}</p></div>
             <p class="p-live p-in" style="--i:2"><span class="p-dot" aria-hidden="true"></span>${order.length} ${order.length === 1 ? "player" : "players"} here · waiting for the host</p>
-            <div class="p-chips p-in" style="--i:3">${order.map((p) => `<span class="chip${p.uid === uid ? " me" : ""}">${avatar(p.nick)}${esc(p.nick)}</span>`).join("")}</div>
+            <div class="p-chips p-in" style="--i:3">${order.map((p) => `<span class="chip${p.uid === uid ? " me" : ""}">${avatar(p.nick, "live")}${esc(p.nick)}</span>`).join("")}</div>
           </section>`);
+        // Tap your buddy for a spin.
+        $("#boop").onclick = (e) => {
+          const b = e.currentTarget;
+          b.classList.remove("booped");
+          void b.offsetWidth;
+          b.classList.add("booped");
+          sound("boop");
+        };
       } else if (s.phase === "question") {
         const q = game.quiz.questions[s.q];
         const answeredByMe = picked !== null || !!(game.answers[s.qk] && game.answers[s.qk][uid]);
@@ -1765,6 +1907,7 @@
             ${q.multi ? `<button class="p-go p-submit" id="submit" ${sel.length ? "" : "disabled"}>${sel.length ? `Submit ${sel.length} ${sel.length === 1 ? "answer" : "answers"}` : "Pick your answers"}</button>` : ""}`);
           app.querySelectorAll("[data-c]").forEach((b) => b.onclick = () => {
             const c = +b.dataset.c;
+            sound("pop");
             if (!q.multi) return answer(c);
             sel = sel.includes(c) ? sel.filter((x) => x !== c) : [...sel, c];
             render();
@@ -1801,9 +1944,10 @@
             ${l.correct ? "" : `<p>${corrects(s).length > 1 ? "The answers were" : "The answer was"} <b>${corrects(s).map((i) => esc(q.options[i])).join(", ")}</b></p>`}
             <p class="p-rank">You're <b>${ordinal(rank)}</b> of ${order.length}${ahead ? ` · ${ahead.score === you.score ? "tied with" : ahead.score - you.score + " behind"} ${esc(ahead.nick)}` : ""}</p>
           </section>`);
+        if (fresh) sound({ ok: "right", no: "wrong", miss: "timeUp" }[kind]);
         if (fresh && kind === "ok") { stopConfetti(); stopConfetti = confetti(50); }
       } else if (s.phase === "end") {
-        const row = (p, i) => `<li class="${p.uid === uid ? "me" : ""}"><span class="pos">${i + 1}</span>${avatar(p.nick, "", { crown: i === 0 })}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score}</span></li>`;
+        const row = (p, i) => `<li class="${p.uid === uid ? "me" : ""}"><span class="pos">${i + 1}</span>${avatar(p.nick, "live", { crown: i === 0 })}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score}</span></li>`;
         const total = you ? you.score : 0;
         const tier = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "";
         const cheer = rank === 1 ? "You won!" : rank <= 3 ? "On the podium!" : rank <= Math.ceil(order.length / 2) ? "Top half. Nice game!" : "Well played!";
