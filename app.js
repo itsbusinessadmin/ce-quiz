@@ -1222,9 +1222,18 @@
       if (!C) return null;
       if (!ctx) {
         ctx = new C();
+        // Everything goes through a limiter, so the effects can be loud
+        // without distorting.
+        const limit = ctx.createDynamicsCompressor();
+        limit.threshold.value = -8;
+        limit.knee.value = 4;
+        limit.ratio.value = 12;
+        limit.attack.value = 0.002;
+        limit.release.value = 0.2;
+        limit.connect(ctx.destination);
         out = ctx.createGain();
-        out.gain.value = 0.55;
-        out.connect(ctx.destination);
+        out.gain.value = 1;
+        out.connect(limit);
       }
       if (ctx.state === "suspended") ctx.resume().catch(() => {});
       return ctx;
@@ -1288,13 +1297,14 @@
       // bright "ta-da" chord with a cymbal, a boom and a sparkle on top.
       reveal: play((t) => {
         let x = t;
-        for (let i = 0; i < 9; i++) { noise(x, 0.05, { vol: 0.08 + i * 0.015, freq: 1800, q: 0.7 }); x += 0.07 - i * 0.004; }
+        for (let i = 0; i < 9; i++) { noise(x, 0.06, { vol: 0.25 + i * 0.04, freq: 1800, q: 0.7 }); x += 0.07 - i * 0.004; }
         const hit = x + 0.03;
-        noise(hit, 0.6, { vol: 0.14, freq: 6500, q: 0.4, type: "highpass" });
-        note(hit, 140, 0.45, { type: "sine", vol: 0.4, to: 55 });
-        [C5, E5, G5].forEach((f, i) => note(hit + i * 0.06, f, 0.2, { type: "square", vol: 0.05, lp: 3000 }));
-        [C5, E5, G5, C6].forEach((f) => note(hit + 0.2, f, 1.0, { type: "triangle", vol: 0.1 }));
-        [2093, 2637, 3136, 4186].forEach((f, i) => note(hit + 0.28 + i * 0.07, f, 0.22, { type: "sine", vol: 0.045 }));
+        noise(hit, 0.7, { vol: 0.35, freq: 6500, q: 0.4, type: "highpass" });
+        note(hit, 140, 0.5, { type: "sine", vol: 0.9, to: 55 });
+        [C5, E5, G5].forEach((f, i) => note(hit + i * 0.06, f, 0.22, { type: "square", vol: 0.14, lp: 3200 }));
+        [C5, E5, G5, C6].forEach((f) => note(hit + 0.2, f, 1.1, { type: "triangle", vol: 0.24 }));
+        [C5 / 2, G5 / 2].forEach((f) => note(hit + 0.2, f, 1.1, { type: "sawtooth", vol: 0.1, lp: 1400 }));
+        [2093, 2637, 3136, 4186].forEach((f, i) => note(hit + 0.28 + i * 0.07, f, 0.25, { type: "sine", vol: 0.1 }));
       }),
       // Phone, right answer: a happy rising arpeggio with a twinkle.
       right: play((t) => {
@@ -1523,6 +1533,26 @@
         if (a.paused) a.play().then(() => { blocked = false; sndLabel(); }, () => { blocked = true; sndLabel(); });
       });
     };
+    // The reveal sound gets the stage: the music goes quiet, then fades back in.
+    let duckTimer = null, fadeTimer = null;
+    const unduck = () => {
+      clearTimeout(duckTimer);
+      clearInterval(fadeTimer);
+      Object.values(tracks).forEach((a) => { a.volume = 0.6; });
+    };
+    const duck = (ms) => {
+      clearTimeout(duckTimer);
+      clearInterval(fadeTimer);
+      Object.values(tracks).forEach((a) => { a.volume = 0; });
+      duckTimer = setTimeout(() => {
+        let v = 0;
+        fadeTimer = setInterval(() => {
+          v = Math.min(0.6, v + 0.04);
+          Object.values(tracks).forEach((a) => { a.volume = v; });
+          if (v >= 0.6) clearInterval(fadeTimer);
+        }, 60);
+      }, ms);
+    };
     sndBtn.onclick = () => {
       if (!blocked) { muted = !muted; save(STORE_MUTED, muted); }
       music(scene);
@@ -1533,7 +1563,7 @@
     document.addEventListener("keydown", fsKey);
     app.classList.add("stage");
     cleanup = () => {
-      dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls();
+      dead = true; clearInterval(tick); subs.forEach((f) => f()); dropMediaUrls(); unduck();
       Object.values(tracks).forEach((a) => { a.pause(); a.removeAttribute("src"); });
       app.classList.remove("stage");
       document.removeEventListener("fullscreenchange", fsLabel);
@@ -1663,12 +1693,12 @@
         // The reveal gets its own sound; the music dips for it.
         revealedQk = s.qk;
         if (!muted) {
-          tracks.bg.volume = 0.15;
-          setTimeout(() => { tracks.bg.volume = 0.6; }, 1800);
+          duck(2000);
           sfx.reveal();
         }
       }
       if (s.phase === "question") {
+        unduck();
         // A question with its own video or audio plays that instead of the question music.
         const own = srcs[s.q] && srcs[s.q].kind !== "image";
         music(own ? null : "question", s.qk !== playedQk);
