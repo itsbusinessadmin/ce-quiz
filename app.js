@@ -18,6 +18,8 @@
   ];
 
   const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  // Answer shapes drifting behind the join and lobby screens.
+  const floaties = () => `<div class="p-floaties" aria-hidden="true">${[0, 1, 2, 3, 0, 2].map((c, i) => `<span class="f${i} c${c}">${choiceIcon(c)}</span>`).join("")}</div>`;
   const SCREEN_ICON = '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const RESULT_ICON = {
     ok: CHECK,
@@ -540,6 +542,7 @@
         </div>
       </section>` : `
       <section class="p-join">
+        ${floaties()}
         <div class="p-hero p-in">
           <div class="brand" data-brand>${brandInner()}</div>
           <p class="muted">Enter the game PIN shown on the big screen.</p>
@@ -548,8 +551,12 @@
         <form class="p-card p-in" style="--i:1" id="joinForm">
           <label class="p-field" for="pinIn"><span class="label">Game PIN</span>
             <input id="pinIn" class="p-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="000000" required></label>
-          <label class="p-field" for="nickIn"><span class="label">Nickname</span>
-            <input id="nickIn" maxlength="16" autocomplete="nickname" placeholder="Your name" pattern="[A-Za-z0-9 _\\-]{1,16}" title="Letters, numbers, spaces, - and _" required></label>
+          <div class="p-nickrow">
+            <span class="p-buddy" id="buddy">${avatar("", "", { mood: "wow" })}</span>
+            <label class="p-field" for="nickIn"><span class="label">Nickname</span>
+              <input id="nickIn" maxlength="16" autocomplete="nickname" placeholder="Your name" pattern="[A-Za-z0-9 _\\-]{1,16}" title="Letters, numbers, spaces, - and _" required></label>
+          </div>
+          <p class="p-hint muted">Your name picks your buddy. Try a few!</p>
           <button type="submit" class="p-go">Join game</button>
         </form>
       </section>`;
@@ -569,6 +576,22 @@
     const me = load(STORE_PLAYER, {});
     if (params.get("pin")) $("#pinIn").value = params.get("pin").replace(/\D/g, "").slice(0, 6);
     if (me.nick) $("#nickIn").value = me.nick;
+    if (!ADMIN) {
+      // The buddy follows the nickname as it's typed, with a little hop.
+      let shownNick = null;
+      const buddy = () => {
+        const v = $("#nickIn").value.trim();
+        if (v === shownNick) return;
+        shownNick = v;
+        const el = $("#buddy");
+        el.innerHTML = avatar(v, "", v ? {} : { mood: "wow" });
+        el.classList.remove("hop");
+        void el.offsetWidth;
+        el.classList.add("hop");
+      };
+      $("#nickIn").addEventListener("input", buddy);
+      buddy();
+    }
     ($("#pinIn").value ? $("#nickIn") : $("#pinIn")).focus();
     if (me.pin && me.nick && !params.get("pin")) {
       $("#resume").innerHTML = `<button class="ghost small" id="rejoin">Rejoin game ${esc(me.pin)} as ${esc(me.nick)}</button>`;
@@ -1107,6 +1130,83 @@
     $("#back").onclick = () => go(home);
   }
 
+  // ---------- avatars ----------
+  // Every nickname gets its own little character: a body, colour, eyes, mouth
+  // and hat picked from the name, so the same name always looks the same on
+  // the phone and the big screen. Nothing extra is stored in the database.
+  // `mood` swaps the face (happy, sad, sleepy, wow); `crown` is for the winner.
+  const AV_COLORS = ["#ff7a8a", "#ffb347", "#ffd84d", "#7ed957", "#3fd0c9", "#6aa8ff", "#a98bff", "#ff8fd1", "#f2a07b", "#5fd6a0"];
+  const AV_INK = "#1d2430";
+  const AV_BODY = [
+    '<path d="M50 20C76 20 88 36 88 58S74 94 50 94 12 80 12 58 24 20 50 20Z"/>',
+    '<path d="M16 56C16 34 30 20 50 20S84 34 84 56V90Q77 82 70 90T56 90Q50 82 44 90T30 90Q23 82 16 90Z"/>',
+    '<path d="M20 42 23 11 42 27ZM80 42 77 11 58 27Z"/><path d="M50 24C76 24 86 40 86 60S72 94 50 94 14 82 14 60 24 24 50 24Z"/>',
+    '<path d="M32 20H68Q86 20 86 38V78Q86 94 68 94H32Q14 94 14 78V38Q14 20 32 20Z"/>',
+    '<circle cx="24" cy="28" r="11"/><circle cx="76" cy="28" r="11"/><path d="M50 22C76 22 88 38 88 60S74 94 50 94 12 82 12 60 24 22 50 22Z"/>',
+  ];
+  const glint = (x, y) => `<circle cx="${x}" cy="${y}" r="1.7" fill="#fff"/>`;
+  const AV_EYES = {
+    dots: `<circle cx="38" cy="55" r="5"/><circle cx="62" cy="55" r="5"/>${glint(36.5, 53.3)}${glint(60.5, 53.3)}`,
+    big: `<circle cx="37" cy="54" r="9" fill="#fff"/><circle cx="63" cy="54" r="9" fill="#fff"/><circle cx="38.5" cy="55.5" r="5"/><circle cx="64.5" cy="55.5" r="5"/>${glint(37, 54)}${glint(63, 54)}`,
+    arcs: '<path d="M32 57Q38 48 44 57M56 57Q62 48 68 57" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>',
+    wink: `<circle cx="38" cy="55" r="5"/>${glint(36.5, 53.3)}<path d="M56 56Q62 50 68 56" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>`,
+    sleepy: '<path d="M32 54Q38 59 44 54M56 54Q62 59 68 54" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>',
+    googly: '<circle cx="36" cy="54" r="10" fill="#fff"/><circle cx="64" cy="55" r="7.5" fill="#fff"/><circle cx="33.5" cy="57" r="4.5"/><circle cx="66" cy="52.5" r="3.6"/>',
+    sad: `<circle cx="38" cy="57" r="4.5"/><circle cx="62" cy="57" r="4.5"/><path d="M31 51 43 46.5M69 51 57 46.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M68 62Q70 67 68.5 69.5Q65 70 66 66Z" fill="#7cc8ff"/>`,
+  };
+  const AV_MOUTH = {
+    smile: '<path d="M43 66Q50 73 57 66" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>',
+    grin: '<path d="M41 64H59Q58 77 50 77T41 64Z"/><ellipse cx="50" cy="73" rx="5" ry="2.6" fill="#ff7b93"/>',
+    tongue: '<path d="M43 65Q50 71 57 65" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M51 68H57V72A3 3 0 0 1 51 72Z" fill="#ff7b93"/>',
+    cat: '<path d="M42 66Q46 71 50 66Q54 71 58 66" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>',
+    o: '<ellipse cx="50" cy="69" rx="3.8" ry="4.6"/>',
+    teeth: '<path d="M41 64H59Q59 75 50 75T41 64Z"/><path d="M45 64H55V67.5H45Z" fill="#fff"/>',
+    frown: '<path d="M43 71Q50 64 57 71" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>',
+  };
+  const AV_HATS = [
+    "",
+    '<path d="M50 22V9" stroke="#3a8f3a" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M50 12Q41 1 33 8Q41 16 50 12ZM50 11Q58 0 66 6Q59 15 50 11Z" fill="#5fcf5f"/>',
+    `<path d="M50 21V8" stroke="${AV_INK}" stroke-width="2.6" stroke-linecap="round"/><circle cx="50" cy="7" r="5" fill="#ffd84d"/>`,
+    '<g transform="rotate(-14 50 24)"><path d="M38 24 50 0 62 24Z" fill="#3d7bfd"/><path d="M42 16H58M46 8H54" stroke="#ffd84d" stroke-width="3"/><circle cx="50" cy="1" r="4" fill="#fff"/></g>',
+    '<path d="M68 21 56 13V29ZM68 21 80 13V29Z" fill="#ff5a8a"/><circle cx="68" cy="21" r="3.6" fill="#e0336b"/>',
+    '<path d="M31 27Q23 13 31 7Q31 17 38 24ZM69 27Q77 13 69 7Q69 17 62 24Z" fill="#fff3d6"/>',
+  ];
+  const AV_CROWN = '<path d="M33 25 35 7 43 16 50 3 57 16 65 7 67 25Z" fill="#ffcf3f" stroke="#e0a817" stroke-width="1.6" stroke-linejoin="round"/><circle cx="50" cy="18" r="2.6" fill="#ff5a5f"/>';
+  function avHash(str) {
+    let h = 2166136261;
+    for (const ch of String(str).trim().toLowerCase()) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
+    return h >>> 0;
+  }
+  function avatarSvg(nick, opts = {}) {
+    let h = avHash(nick);
+    const pick = (n) => { const v = h % n; h = Math.floor(h / n) || avHash(h + nick); return v; };
+    const color = AV_COLORS[pick(AV_COLORS.length)];
+    const body = pick(AV_BODY.length);
+    let eyes = ["dots", "big", "wink", "googly", "dots", "big"][pick(6)];
+    let mouth = ["smile", "grin", "tongue", "cat", "teeth", "smile"][pick(6)];
+    let hat = body === 2 || body === 4 ? "" : AV_HATS[pick(AV_HATS.length)];
+    let extra = "";
+    if (opts.mood === "happy") { eyes = "arcs"; mouth = "grin"; }
+    else if (opts.mood === "sad") { eyes = "sad"; mouth = "frown"; }
+    else if (opts.mood === "sleepy") { eyes = "sleepy"; mouth = "o"; extra = '<g font-family="system-ui, sans-serif" font-weight="800" fill="#fff" stroke="#1d2430" stroke-width="1.4" paint-order="stroke"><text x="78" y="32" font-size="17">z</text><text x="89" y="18" font-size="12">z</text></g>'; }
+    else if (opts.mood === "wow") { eyes = "big"; mouth = "o"; }
+    if (opts.crown) hat = AV_CROWN;
+    const delay = (avHash(nick + "~") % 2000) / 1000;
+    return `<svg class="avt" viewBox="0 0 100 100" aria-hidden="true" focusable="false" style="--d:-${delay}s;color:${AV_INK}">
+      <ellipse cx="50" cy="96" rx="27" ry="3.4" fill="#000" opacity=".2"/>
+      <g class="avt-bob">
+        <g fill="${color}">${AV_BODY[body]}</g>
+        <ellipse cx="50" cy="83" rx="20" ry="8" fill="#fff" opacity=".18"/>
+        <ellipse cx="27" cy="65" rx="6.5" ry="3.8" fill="#ff6f8e" opacity=".45"/><ellipse cx="73" cy="65" rx="6.5" ry="3.8" fill="#ff6f8e" opacity=".45"/>
+        <g class="avt-eyes" fill="currentColor">${AV_EYES[eyes]}</g>
+        <g fill="currentColor">${AV_MOUTH[mouth]}</g>
+        ${hat}${extra}
+      </g>
+    </svg>`;
+  }
+  // `cls`: "big", "live" (idle bounce and blink), or both.
+  const avatar = (nick, cls, opts) => `<span class="p-av${cls ? " " + cls : ""}">${avatarSvg(nick, opts)}</span>`;
+
   // ---------- big screen ----------
   // Markup for the host's big screen, shared by the live game and the editor's
   // preview so both always look the same. `actions` is the buttons on the right
@@ -1283,6 +1383,7 @@
     let game = null, secret = null, lastBoard = [], revealing = false;
     const subs = [];
     let srcs = [], shown = null, coverSrc = null, peopleKey = null;
+    const seenPeople = new Set();
     // The host screen is a 16:9 stage that fits the window without scrolling,
     // so it reads well shared in Zoom, Google Meet or Teams.
     const fsBtn = document.createElement("button");
@@ -1474,7 +1575,11 @@
         $("#pcount").textContent = list.length;
         $("#start").disabled = !list.length;
         $("#plist").innerHTML = list.length
-          ? list.map((p) => `<span class="chip" style="${game.presence[p.uid] ? "" : "opacity:.45"}">${esc(p.nick)}</span>`).join("")
+          ? list.map((p) => {
+            const isNew = !seenPeople.has(p.uid);
+            seenPeople.add(p.uid);
+            return `<span class="pchip${isNew ? " new" : ""}" style="${game.presence[p.uid] ? "" : "opacity:.45"}">${avatar(p.nick, "live")}<b>${esc(p.nick)}</b></span>`;
+          }).join("")
           : '<p class="muted">Waiting for participants…</p>';
         return;
       }
@@ -1515,14 +1620,14 @@
             <div class="board">${list.slice(0, 5).map((p, i) => {
               const was = lastBoard.indexOf(p.uid);
               const moved = was > i ? ' <span style="color:var(--good)">▲</span>' : "";
-              return `<div class="r"><span class="pos">${i + 1}</span><span>${esc(p.nick)}${moved}</span>${p.streak >= 2 ? `<span class="muted" style="font-size:.9rem">streak ${p.streak}</span>` : ""}<span class="pts">${p.score}</span></div>`;
+              return `<div class="r"><span class="pos">${i + 1}</span>${avatar(p.nick, "", { crown: i === 0 })}<span>${esc(p.nick)}${moved}</span>${p.streak >= 2 ? `<span class="muted" style="font-size:.9rem">streak ${p.streak}</span>` : ""}<span class="pts">${p.score}</span></div>`;
             }).join("")}</div>
           </section>`;
         $("#next").onclick = next;
       } else if (s.phase === "end") {
         save(STORE_HOSTING, null);
         const [a, b, c] = list;
-        const step = (p, cls, place) => `<div class="step ${cls}"><span class="label" style="${cls === "p1" ? "color:var(--ink)" : ""}">${place}</span><b>${p ? esc(p.nick) : "—"}</b><span>${p ? p.score : ""}</span></div>`;
+        const step = (p, cls, place) => `<div class="step ${cls}">${p ? avatar(p.nick, "pod live", { mood: "happy", crown: cls === "p1" }) : ""}<span class="label" style="${cls === "p1" ? "color:var(--ink)" : ""}">${place}</span><b>${p ? esc(p.nick) : "—"}</b><span>${p ? p.score : ""}</span></div>`;
         app.innerHTML = `
           <section class="screen">
             <div class="sbar"><h2>Winners</h2><div class="spacer"></div><button class="ghost small" id="home">Home</button><button class="small" id="again">Play again</button></div>
@@ -1600,7 +1705,8 @@
     }
 
     // Each nickname gets one of the four answer colours for its avatar.
-    const avatar = (n, cls) => `<span class="p-av${cls ? " " + cls : ""}" style="--av:var(--a${[...n].reduce((h, ch) => h + ch.charCodeAt(0), 0) % 4})" aria-hidden="true">${esc(n.trim().charAt(0).toUpperCase())}</span>`;
+    // A friendly line for the lobby, picked by name so it doesn't change on redraws.
+    const QUIPS = ["Ready to win!", "Let's gooo!", "I studied. Kind of.", "Snacks first, then glory.", "Bring it on!", "Here for the confetti.", "Brain warming up…", "Feeling lucky!", "Born ready.", "Is it my turn yet?"];
 
     function header(s, you) {
       const qs = game.quiz ? game.quiz.questions : [];
@@ -1630,10 +1736,11 @@
       const key = (s.phase === "board" ? "reveal" : s.phase) + ":" + (s.qk || "");
       if (s.phase === "lobby") {
         paint(key, `<section class="p-center p-lobby">
-            <div class="p-in">${avatar(nick, "big")}</div>
+            ${floaties()}
+            <div class="p-me-big p-in"><span class="p-bubble">${QUIPS[avHash(nick + "!") % QUIPS.length]}</span>${avatar(nick, "big live")}</div>
             <div class="p-who p-in" style="--i:1"><span class="label">You're in</span><h1 class="p-name">${esc(nick)}</h1><p class="muted">${esc(game.quiz.title)}</p></div>
             <p class="p-live p-in" style="--i:2"><span class="p-dot" aria-hidden="true"></span>${order.length} ${order.length === 1 ? "player" : "players"} here · waiting for the host</p>
-            <div class="p-chips p-in" style="--i:3">${order.map((p) => `<span class="chip${p.uid === uid ? " me" : ""}">${esc(p.nick)}</span>`).join("")}</div>
+            <div class="p-chips p-in" style="--i:3">${order.map((p) => `<span class="chip${p.uid === uid ? " me" : ""}">${avatar(p.nick)}${esc(p.nick)}</span>`).join("")}</div>
           </section>`);
       } else if (s.phase === "question") {
         const q = game.quiz.questions[s.q];
@@ -1644,7 +1751,8 @@
         if (tooLate || answeredByMe) {
           const chosen = picked === null ? [] : q.options.map((_, i) => i).filter((i) => (q.multi ? (picked >> i) & 1 : picked === i));
           paint(key + (tooLate ? ":late" : ":locked"), `${header(s, you)}<section class="p-center p-wait">
-              ${chosen.length ? `<div class="p-picked p-in">${chosen.map((i) => `<span class="p-mini c${i}">${choiceIcon(i)}</span>`).join("")}</div>` : ""}
+              ${chosen.length ? `<div class="p-picked p-in" style="--i:2">${chosen.map((i) => `<span class="p-mini c${i}">${choiceIcon(i)}</span>`).join("")}</div>` : ""}
+              <div class="p-wait-av p-in">${avatar(nick, "big live", { mood: tooLate ? "sad" : "wow" })}</div>
               <h2 class="p-in" style="--i:1">${tooLate ? "Too late" : "Answer locked in"}</h2>
               <p class="muted p-in" style="--i:2">${tooLate ? "That answer arrived after time ran out." : `${n} of ${order.length} have answered`}</p>
               ${tooLate ? "" : '<div class="p-dots" aria-hidden="true"><i></i><i style="--i:1"></i><i style="--i:2"></i></div>'}
@@ -1683,17 +1791,19 @@
         const l = mine.last && mine.last.q === s.q ? mine.last : { correct: false, gained: 0, answered: false };
         const ahead = rank > 1 ? order[rank - 2] : null;
         const kind = l.correct ? "ok" : l.answered ? "no" : "miss";
+        const fresh = shownView !== key;
         paint(key, `${header(s, you)}
           <section class="p-result ${kind} p-in">
-            <span class="p-mark" aria-hidden="true">${RESULT_ICON[kind]}</span>
+            <div class="p-react">${avatar(nick, "big live", { mood: { ok: "happy", no: "sad", miss: "sleepy" }[kind] })}<span class="p-mark" aria-hidden="true">${RESULT_ICON[kind]}</span></div>
             <h2>${l.correct ? "Correct" : l.answered ? "Not quite" : "Time's up"}</h2>
             <span class="p-gain">+${l.correct ? l.gained : 0}</span>
             ${l.correct && mine.streak >= 2 ? `<span class="p-pill">Answer streak ×${mine.streak}</span>` : ""}
             ${l.correct ? "" : `<p>${corrects(s).length > 1 ? "The answers were" : "The answer was"} <b>${corrects(s).map((i) => esc(q.options[i])).join(", ")}</b></p>`}
             <p class="p-rank">You're <b>${ordinal(rank)}</b> of ${order.length}${ahead ? ` · ${ahead.score === you.score ? "tied with" : ahead.score - you.score + " behind"} ${esc(ahead.nick)}` : ""}</p>
           </section>`);
+        if (fresh && kind === "ok") { stopConfetti(); stopConfetti = confetti(50); }
       } else if (s.phase === "end") {
-        const row = (p, i) => `<li class="${p.uid === uid ? "me" : ""}"><span class="pos">${i + 1}</span>${avatar(p.nick)}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score}</span></li>`;
+        const row = (p, i) => `<li class="${p.uid === uid ? "me" : ""}"><span class="pos">${i + 1}</span>${avatar(p.nick, "", { crown: i === 0 })}<span class="nm">${esc(p.nick)}</span><span class="pts">${p.score}</span></li>`;
         const total = you ? you.score : 0;
         const tier = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "";
         const cheer = rank === 1 ? "You won!" : rank <= 3 ? "On the podium!" : rank <= Math.ceil(order.length / 2) ? "Top half. Nice game!" : "Well played!";
